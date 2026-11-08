@@ -1,0 +1,43 @@
+services:
+
+  frontend:
+    build:
+      context: ./apps/frontend
+    container_name: tienda-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./apps/backend
+    container_name: tienda-backend
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://tienda:password@database:5432/tienda_db
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  database:
+    image: postgres:17
+    container_name: tienda-database
+    environment:
+      POSTGRES_USER: tienda
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tienda_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tienda -d tienda_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
