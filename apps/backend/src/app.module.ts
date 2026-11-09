@@ -1,14 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { createObserveModule } from '@nestjs/observe';
+import { AnunciosModule } from './anuncios/anuncios.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
-import { CategoriesModule } from './categories/categories.module.js';
+import { CajaModule } from './caja/caja.module.js';
+import { CatalogoModule } from './catalogo/catalogo.module.js';
+import { ComprasModule } from './compras/compras.module.js';
 import { HealthController } from './health/health.controller.js';
-import { InventoryModule } from './inventory/inventory.module.js';
+import { InventarioModule } from './inventario/inventario.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
-import { ProductsModule } from './products/products.module.js';
-import { StatsModule } from './stats/stats.module.js';
+import { PublicoModule } from './publico/publico.module.js';
+import { RealtimeModule } from './realtime/realtime.module.js';
+import { ReportesModule } from './reportes/reportes.module.js';
+import { VentasModule } from './ventas/ventas.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -24,10 +29,15 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       serviceId: 'backend',
     }),
     PrismaModule,
-    InventoryModule,
-    CategoriesModule,
-    ProductsModule,
-    StatsModule,
+    RealtimeModule,
+    CatalogoModule,
+    InventarioModule,
+    ComprasModule,
+    CajaModule,
+    VentasModule,
+    AnunciosModule,
+    PublicoModule,
+    ReportesModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

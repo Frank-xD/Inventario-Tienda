@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Inventario Tienda",
-  description: "Gestión de inventario en tiempo real",
+  title: "Mi Tiendita",
+  description: "Inventario, ventas y caja de la tienda",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

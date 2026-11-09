@@ -1,61 +1,324 @@
-// Esquema de base de datos de Inventario Tienda.
-// Docs: https://pris.ly/d/prisma-schema
+// Esquema de la tienda de barrio.
+//
+// La fuente de verdad es el SQL de prisma/migrations/20261110000000_init
+// (copia legible en docs/tienda_schema.sql). Allí viven también los CHECK,
+// los triggers que mueven el inventario y las vistas, que Prisma no modela.
+// Este archivo solo describe las tablas y vistas para el cliente de Prisma;
+// los nombres en camelCase se mapean a las columnas en español con @map.
+//
+// IMPORTANTE: el stock NO es una columna. Es la suma de movimientos_inventario
+// (vista v_stock). Nunca se edita a mano: se registran compras, ventas,
+// ajustes o mermas.
 
 generator client {
   provider            = "prisma-client"
   output              = "../src/generated/prisma"
   moduleFormat        = "esm"
   importFileExtension = "js"
+  previewFeatures     = ["views"]
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-model Category {
-  id        Int       @id @default(autoincrement())
-  name      String    @unique
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  products  Product[]
+// ---------------------------------------------------------------------
+// 1. Catálogo
+// ---------------------------------------------------------------------
 
-  @@map("categories")
+model Categoria {
+  id        Int        @id @default(autoincrement())
+  nombre    String     @unique
+  activa    Boolean    @default(true)
+  productos Producto[]
+
+  @@map("categorias")
 }
 
-model Product {
-  id          Int             @id @default(autoincrement())
-  sku         String          @unique
-  name        String
-  description String?
-  price       Decimal         @db.Decimal(10, 2)
-  stock       Int             @default(0)
-  minStock    Int             @default(0) @map("min_stock")
-  active      Boolean         @default(true)
-  categoryId  Int?            @map("category_id")
-  category    Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  movements   StockMovement[]
-  createdAt   DateTime        @default(now()) @map("created_at")
-  updatedAt   DateTime        @updatedAt @map("updated_at")
+model Proveedor {
+  id        Int        @id @default(autoincrement())
+  nombre    String
+  telefono  String?
+  notas     String?
+  activo    Boolean    @default(true)
+  compras   Compra[]
+  productos Producto[]
 
-  @@index([categoryId])
-  @@map("products")
+  @@map("proveedores")
 }
 
-enum MovementType {
-  IN
-  OUT
-  ADJUSTMENT
+/// CHECK: precio >= 0, costo >= 0, stock_minimo >= 0
+model Producto {
+  id                    Int                    @id @default(autoincrement())
+  codigoBarras          String?                @unique @map("codigo_barras")
+  nombre                String
+  descripcion           String?
+  categoriaId           Int                    @map("categoria_id")
+  proveedorId           Int?                   @map("proveedor_id")
+  precio                Decimal                @db.Decimal(12, 2)
+  costo                 Decimal                @default(0) @db.Decimal(12, 2)
+  stockMinimo           Int                    @default(0) @map("stock_minimo")
+  fotoUrl               String?                @map("foto_url")
+  activo                Boolean                @default(true)
+  creadoEn              DateTime               @default(now()) @map("creado_en") @db.Timestamptz(6)
+  categoria             Categoria              @relation(fields: [categoriaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  proveedor             Proveedor?             @relation(fields: [proveedorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  detallesCompra        DetalleCompra[]
+  detallesVenta         DetalleVenta[]
+  lotes                 Lote[]
+  movimientosInventario MovimientoInventario[]
+
+  @@index([categoriaId], map: "idx_productos_categoria")
+  @@index([nombre(ops: raw("gin_trgm_ops"))], map: "idx_productos_nombre_trgm", type: Gin)
+  @@index([proveedorId], map: "idx_productos_proveedor")
+  @@map("productos")
 }
 
-model StockMovement {
-  id        Int          @id @default(autoincrement())
-  productId Int          @map("product_id")
-  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  type      MovementType
-  quantity  Int
-  note      String?
-  createdAt DateTime     @default(now()) @map("created_at")
+// ---------------------------------------------------------------------
+// 2. Caja
+// ---------------------------------------------------------------------
 
-  @@index([productId, createdAt])
-  @@map("stock_movements")
+/// Índice único parcial (en el SQL): solo una caja con cerrada_en NULL.
+model Caja {
+  id           Int              @id @default(autoincrement())
+  abiertaEn    DateTime         @default(now()) @map("abierta_en") @db.Timestamptz(6)
+  cerradaEn    DateTime?        @map("cerrada_en") @db.Timestamptz(6)
+  montoInicial Decimal          @default(0) @map("monto_inicial") @db.Decimal(12, 2)
+  montoContado Decimal?         @map("monto_contado") @db.Decimal(12, 2)
+  notas        String?
+  movimientos  MovimientoCaja[]
+  ventas       Venta[]
+
+  @@map("cajas")
+}
+
+/// CHECK: tipo IN ('ingreso','egreso'), monto > 0
+model MovimientoCaja {
+  id       Int      @id @default(autoincrement())
+  cajaId   Int      @map("caja_id")
+  tipo     String
+  monto    Decimal  @db.Decimal(12, 2)
+  motivo   String
+  creadoEn DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  caja     Caja     @relation(fields: [cajaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("movimientos_caja")
+}
+
+// ---------------------------------------------------------------------
+// 3. Anuncios
+// ---------------------------------------------------------------------
+
+/// CHECK: hasta >= desde
+model Anuncio {
+  id      Int      @id @default(autoincrement())
+  texto   String
+  desde   DateTime @db.Date
+  hasta   DateTime @db.Date
+  visible Boolean  @default(true)
+
+  @@map("anuncios")
+}
+
+// ---------------------------------------------------------------------
+// 4. Ventas (POS)
+// ---------------------------------------------------------------------
+
+/// CHECK: metodo_pago IN ('efectivo','transferencia'),
+///        estado IN ('completada','anulada'), anulada => motivo_anulacion.
+/// Trigger trg_anular_venta: al anular devuelve el stock.
+model Venta {
+  id                    Int                    @id @default(autoincrement())
+  cajaId                Int                    @map("caja_id")
+  fecha                 DateTime               @default(now()) @db.Timestamptz(6)
+  subtotal              Decimal                @default(0) @db.Decimal(12, 2)
+  descuento             Decimal                @default(0) @db.Decimal(12, 2)
+  total                 Decimal                @default(0) @db.Decimal(12, 2)
+  metodoPago            String                 @map("metodo_pago")
+  estado                String                 @default("completada")
+  motivoAnulacion       String?                @map("motivo_anulacion")
+  caja                  Caja                   @relation(fields: [cajaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  detalles              DetalleVenta[]
+  movimientosInventario MovimientoInventario[]
+
+  @@index([cajaId], map: "idx_ventas_caja")
+  @@index([fecha], map: "idx_ventas_fecha")
+  @@map("ventas")
+}
+
+/// CHECK: cantidad > 0, precio_unit >= 0.
+/// Trigger trg_venta_a_inventario: cada línea resta stock.
+model DetalleVenta {
+  id         Int      @id @default(autoincrement())
+  ventaId    Int      @map("venta_id")
+  productoId Int      @map("producto_id")
+  cantidad   Int
+  precioUnit Decimal  @map("precio_unit") @db.Decimal(12, 2)
+  costoUnit  Decimal  @default(0) @map("costo_unit") @db.Decimal(12, 2)
+  descuento  Decimal  @default(0) @db.Decimal(12, 2)
+  producto   Producto @relation(fields: [productoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  venta      Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([productoId], map: "idx_detalle_venta_producto")
+  @@index([ventaId], map: "idx_detalle_venta_venta")
+  @@map("detalle_venta")
+}
+
+// ---------------------------------------------------------------------
+// 5. Compras a proveedores
+// ---------------------------------------------------------------------
+
+model Compra {
+  id                    Int                    @id @default(autoincrement())
+  proveedorId           Int                    @map("proveedor_id")
+  fecha                 DateTime               @default(now()) @db.Timestamptz(6)
+  total                 Decimal                @default(0) @db.Decimal(12, 2)
+  notas                 String?
+  proveedor             Proveedor              @relation(fields: [proveedorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  detalles              DetalleCompra[]
+  lotes                 Lote[]
+  movimientosInventario MovimientoInventario[]
+
+  @@map("compras")
+}
+
+/// CHECK: cantidad > 0, costo_unit >= 0.
+/// Trigger trg_compra_a_inventario: suma stock, actualiza costo del producto,
+/// recalcula compras.total y crea el lote si trae fecha de vencimiento.
+model DetalleCompra {
+  id               Int       @id @default(autoincrement())
+  compraId         Int       @map("compra_id")
+  productoId       Int       @map("producto_id")
+  cantidad         Int
+  costoUnit        Decimal   @map("costo_unit") @db.Decimal(12, 2)
+  fechaVencimiento DateTime? @map("fecha_vencimiento") @db.Date
+  compra           Compra    @relation(fields: [compraId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  producto         Producto  @relation(fields: [productoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([compraId], map: "idx_detalle_compra_compra")
+  @@map("detalle_compra")
+}
+
+// ---------------------------------------------------------------------
+// 6. Lotes (fechas de vencimiento, informativo)
+// ---------------------------------------------------------------------
+
+/// CHECK: cantidad_inicial > 0
+model Lote {
+  id               Int      @id @default(autoincrement())
+  productoId       Int      @map("producto_id")
+  compraId         Int?     @map("compra_id")
+  fechaVencimiento DateTime @map("fecha_vencimiento") @db.Date
+  cantidadInicial  Int      @map("cantidad_inicial")
+  creadoEn         DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  compra           Compra?  @relation(fields: [compraId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  producto         Producto @relation(fields: [productoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([productoId], map: "idx_lotes_producto")
+  @@index([fechaVencimiento], map: "idx_lotes_vencimiento")
+  @@map("lotes")
+}
+
+// ---------------------------------------------------------------------
+// 7. Inventario (el stock es la suma de estos movimientos)
+// ---------------------------------------------------------------------
+
+/// CHECK: tipo IN ('compra','venta','ajuste','merma','anulacion_venta'),
+///        cantidad <> 0 con signo según el tipo, ajuste => motivo.
+model MovimientoInventario {
+  id         BigInt   @id @default(autoincrement())
+  productoId Int      @map("producto_id")
+  tipo       String
+  cantidad   Int
+  motivo     String?
+  ventaId    Int?     @map("venta_id")
+  compraId   Int?     @map("compra_id")
+  creadoEn   DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  compra     Compra?  @relation(fields: [compraId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  producto   Producto @relation(fields: [productoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  venta      Venta?   @relation(fields: [ventaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([creadoEn], map: "idx_mov_fecha")
+  @@index([productoId], map: "idx_mov_producto")
+  @@map("movimientos_inventario")
+}
+
+// ---------------------------------------------------------------------
+// Vistas (solo lectura). @unique solo sirve al cliente de Prisma.
+// ---------------------------------------------------------------------
+
+view VStock {
+  productoId  Int    @unique @map("producto_id")
+  nombre      String
+  stockMinimo Int    @map("stock_minimo")
+  stock       Int
+
+  @@map("v_stock")
+}
+
+view VAlertaStock {
+  productoId  Int    @unique @map("producto_id")
+  nombre      String
+  stock       Int
+  stockMinimo Int    @map("stock_minimo")
+  nivel       String
+  proveedorId Int?   @map("proveedor_id")
+
+  @@map("v_alertas_stock")
+}
+
+view VPorVencer {
+  loteId           Int      @unique @map("lote_id")
+  productoId       Int      @map("producto_id")
+  nombre           String
+  fechaVencimiento DateTime @map("fecha_vencimiento") @db.Date
+  cantidadInicial  Int      @map("cantidad_inicial")
+  diasRestantes    Int      @map("dias_restantes")
+  nivel            String
+
+  @@map("v_por_vencer")
+}
+
+view VCatalogoPublico {
+  id             Int     @unique
+  nombre         String
+  categoria      String
+  fotoUrl        String? @map("foto_url")
+  precio         Decimal @db.Decimal(12, 2)
+  disponibilidad String
+
+  @@map("v_catalogo_publico")
+}
+
+view VAnuncioVigente {
+  id    Int    @unique
+  texto String
+
+  @@map("v_anuncios_vigentes")
+}
+
+view VResumenCaja {
+  cajaId              Int       @unique @map("caja_id")
+  abiertaEn           DateTime  @map("abierta_en") @db.Timestamptz(6)
+  cerradaEn           DateTime? @map("cerrada_en") @db.Timestamptz(6)
+  montoInicial        Decimal   @map("monto_inicial") @db.Decimal(12, 2)
+  ventasEfectivo      Decimal   @map("ventas_efectivo") @db.Decimal
+  ventasTransferencia Decimal   @map("ventas_transferencia") @db.Decimal
+  otrosIngresos       Decimal   @map("otros_ingresos") @db.Decimal
+  egresos             Decimal   @db.Decimal
+  efectivoEsperado    Decimal   @map("efectivo_esperado") @db.Decimal
+  montoContado        Decimal?  @map("monto_contado") @db.Decimal(12, 2)
+  diferencia          Decimal?  @db.Decimal
+
+  @@map("v_resumen_caja")
+}
+
+view VVentaPorProducto {
+  productoId Int     @unique @map("producto_id")
+  nombre     String
+  unidades   BigInt
+  ingresos   Decimal @db.Decimal
+  margen     Decimal @db.Decimal
+
+  @@map("v_ventas_por_producto")
 }
