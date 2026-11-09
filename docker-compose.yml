@@ -1,43 +1,77 @@
-services:
+# Entorno de DESARROLLO con hot reload.
+#   docker compose up --build
+# Producción:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 
-  frontend:
-    build:
-      context: ./apps/frontend
-    container_name: tienda-frontend
+services:
+  database:
+    image: postgres:17
+    container_name: tienda-database
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tienda}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-tienda_db}
     ports:
-      - "3000:3000"
-    depends_on:
-      - backend
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   backend:
     build:
-      context: ./apps/backend
+      context: .
+      dockerfile: apps/backend/Dockerfile
+      target: dev
     container_name: tienda-backend
-    ports:
-      - "3001:3001"
     environment:
-      DATABASE_URL: postgresql://tienda:password@database:5432/tienda_db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tienda}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-tienda_db}
+      PORT: 3001
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      OBSERVE_APP_KEY: ${OBSERVE_APP_KEY:-}
+      OBSERVE_APP_SECRET: ${OBSERVE_APP_SECRET:-}
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    volumes:
+      - ./apps/backend:/app/apps/backend
+      # node_modules vive dentro del contenedor, no se pisa con el del host
+      - backend_node_modules:/app/apps/backend/node_modules
+      - backend_root_node_modules:/app/node_modules
     depends_on:
       database:
         condition: service_healthy
     restart: unless-stopped
 
-  database:
-    image: postgres:17
-    container_name: tienda-database
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      target: dev
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+    container_name: tienda-frontend
     environment:
-      POSTGRES_USER: tienda
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: tienda_db
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tienda -d tienda_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - ./apps/frontend:/app/apps/frontend
+      - frontend_node_modules:/app/apps/frontend/node_modules
+      - frontend_root_node_modules:/app/node_modules
+      - frontend_next:/app/apps/frontend/.next
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:
   postgres_data:
+  backend_node_modules:
+  backend_root_node_modules:
+  frontend_node_modules:
+  frontend_root_node_modules:
+  frontend_next:

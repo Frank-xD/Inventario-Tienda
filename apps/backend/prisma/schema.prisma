@@ -1,0 +1,61 @@
+// Esquema de base de datos de Inventario Tienda.
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  products  Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          Int             @id @default(autoincrement())
+  sku         String          @unique
+  name        String
+  description String?
+  price       Decimal         @db.Decimal(10, 2)
+  stock       Int             @default(0)
+  minStock    Int             @default(0) @map("min_stock")
+  active      Boolean         @default(true)
+  categoryId  Int?            @map("category_id")
+  category    Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  movements   StockMovement[]
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+enum MovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+model StockMovement {
+  id        Int          @id @default(autoincrement())
+  productId Int          @map("product_id")
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type      MovementType
+  quantity  Int
+  note      String?
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@index([productId, createdAt])
+  @@map("stock_movements")
+}

@@ -1,0 +1,15 @@
+# Override de PRODUCCIÓN: imágenes optimizadas, sin volúmenes de código.
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+
+services:
+  backend:
+    build:
+      target: prod
+    volumes: !reset []
+
+  frontend:
+    build:
+      target: prod
+    environment:
+      WATCHPACK_POLLING: !reset null
+    volumes: !reset []
