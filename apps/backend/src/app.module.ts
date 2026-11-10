@@ -2,11 +2,13 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { createObserveModule } from '@nestjs/observe';
 import { AnunciosModule } from './anuncios/anuncios.module.js';
+import { AvisosModule } from './avisos/avisos.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { CajaModule } from './caja/caja.module.js';
 import { CatalogoModule } from './catalogo/catalogo.module.js';
 import { ComprasModule } from './compras/compras.module.js';
+import { ConfiguracionModule } from './configuracion/configuracion.module.js';
 import { HealthController } from './health/health.controller.js';
 import { InventarioModule } from './inventario/inventario.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -38,6 +40,8 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AnunciosModule,
     PublicoModule,
     ReportesModule,
+    AvisosModule,
+    ConfiguracionModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

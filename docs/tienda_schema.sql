@@ -6,9 +6,9 @@
 --           ni auditoría.
 --  Uso:   psql -U postgres -d tienda -f tienda_schema.sql
 --  Notas: - Zona horaria de la tienda: America/La_Paz
---         - Cantidades de stock son enteras (unidades). Si vendes por
---           peso (kg), cambia INTEGER por NUMERIC(12,3) en las columnas
---           "cantidad" y "stock_minimo".
+--         - Cantidades en NUMERIC(12,3): cada producto se vende por
+--           'unidad' (cantidades enteras, lo exige trg_validar_cantidad) o
+--           por 'kg' (hasta 3 decimales = gramos).
 -- =====================================================================
 
 BEGIN;
@@ -41,8 +41,9 @@ CREATE TABLE productos (
     proveedor_id   INTEGER       REFERENCES proveedores(id),
     precio         NUMERIC(12,2) NOT NULL CHECK (precio >= 0),
     costo          NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (costo >= 0),
-    stock_minimo   INTEGER       NOT NULL DEFAULT 0 CHECK (stock_minimo >= 0),
-    foto_url       TEXT,
+    stock_minimo   NUMERIC(12,3) NOT NULL DEFAULT 0 CHECK (stock_minimo >= 0),
+    unidad_medida  TEXT          NOT NULL DEFAULT 'unidad'
+                   CHECK (unidad_medida IN ('unidad', 'kg')),   -- 'kg' = venta por peso
     activo         BOOLEAN       NOT NULL DEFAULT TRUE,
     creado_en      TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
@@ -112,7 +113,7 @@ CREATE TABLE detalle_venta (
     id            SERIAL PRIMARY KEY,
     venta_id      INTEGER       NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,
     producto_id   INTEGER       NOT NULL REFERENCES productos(id),
-    cantidad      INTEGER       NOT NULL CHECK (cantidad > 0),
+    cantidad      NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),   -- piezas o kg
     precio_unit   NUMERIC(12,2) NOT NULL CHECK (precio_unit >= 0),   -- precio al momento de vender
     costo_unit    NUMERIC(12,2) NOT NULL DEFAULT 0,                  -- para calcular margen histórico
     descuento     NUMERIC(12,2) NOT NULL DEFAULT 0
@@ -135,7 +136,7 @@ CREATE TABLE detalle_compra (
     id            SERIAL PRIMARY KEY,
     compra_id     INTEGER       NOT NULL REFERENCES compras(id) ON DELETE CASCADE,
     producto_id   INTEGER       NOT NULL REFERENCES productos(id),
-    cantidad      INTEGER       NOT NULL CHECK (cantidad > 0),
+    cantidad      NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),   -- piezas o kg
     costo_unit    NUMERIC(12,2) NOT NULL CHECK (costo_unit >= 0),
     fecha_vencimiento DATE                      -- opcional: si se llena, se crea un lote
 );
@@ -155,7 +156,7 @@ CREATE TABLE lotes (
     producto_id        INTEGER     NOT NULL REFERENCES productos(id),
     compra_id          INTEGER     REFERENCES compras(id),    -- NULL si es stock inicial
     fecha_vencimiento  DATE        NOT NULL,
-    cantidad_inicial   INTEGER     NOT NULL CHECK (cantidad_inicial > 0),  -- unidades recibidas con esa fecha (referencia; no baja al vender)
+    cantidad_inicial   NUMERIC(12,3) NOT NULL CHECK (cantidad_inicial > 0),  -- unidades recibidas con esa fecha (referencia; no baja al vender)
     creado_en          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_lotes_producto    ON lotes (producto_id);
@@ -169,7 +170,7 @@ CREATE TABLE movimientos_inventario (
     producto_id  INTEGER     NOT NULL REFERENCES productos(id),
     tipo         TEXT        NOT NULL
                  CHECK (tipo IN ('compra', 'venta', 'ajuste', 'merma', 'anulacion_venta')),
-    cantidad     INTEGER     NOT NULL,              -- con signo: + entra, - sale
+    cantidad     NUMERIC(12,3) NOT NULL,            -- con signo: + entra, - sale
     motivo       TEXT,
     venta_id     INTEGER     REFERENCES ventas(id),
     compra_id    INTEGER     REFERENCES compras(id),
@@ -182,9 +183,193 @@ CREATE TABLE movimientos_inventario (
 CREATE INDEX idx_mov_producto ON movimientos_inventario (producto_id);
 CREATE INDEX idx_mov_fecha    ON movimientos_inventario (creado_en);
 
+-- ---------------------------------------------------------------------
+-- 1. CONFIGURACIÓN: una sola fila (id = 1)
+-- ---------------------------------------------------------------------
+CREATE TABLE configuracion (
+    id                  SMALLINT    PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    nombre_tienda       TEXT        NOT NULL DEFAULT 'Mi Tiendita' CHECK (btrim(nombre_tienda) <> ''),
+    correo              TEXT,
+    telefono            TEXT,
+    -- Qué avisos genera fn_sincronizar_avisos()
+    notif_stock         BOOLEAN     NOT NULL DEFAULT TRUE,
+    notif_vencimientos  BOOLEAN     NOT NULL DEFAULT TRUE,
+    notif_proveedores   BOOLEAN     NOT NULL DEFAULT TRUE,
+    -- Preferencia guardada; el envío por correo aún no está implementado.
+    resumen_semanal     BOOLEAN     NOT NULL DEFAULT FALSE,
+    actualizado_en      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO configuracion (id) VALUES (1);
+
+-- ---------------------------------------------------------------------
+-- 2. AVISOS
+--    stock / vencimiento / proveedor: los genera y los cierra (resuelto_en)
+--    fn_sincronizar_avisos() según el estado actual. La "clave" identifica
+--    el problema: mientras siga abierto no se duplica.
+--    info: los inserta la API (proveedor, categoría o producto nuevos).
+-- ---------------------------------------------------------------------
+CREATE TABLE avisos (
+    id           SERIAL      PRIMARY KEY,
+    tipo         TEXT        NOT NULL CHECK (tipo IN ('stock', 'vencimiento', 'proveedor', 'info')),
+    titulo       TEXT        NOT NULL,
+    texto        TEXT        NOT NULL,
+    clave        TEXT,
+    producto_id  INTEGER     REFERENCES productos(id) ON DELETE CASCADE,
+    creado_en    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    leido_en     TIMESTAMPTZ,
+    resuelto_en  TIMESTAMPTZ,
+    CHECK (tipo = 'info' OR clave IS NOT NULL)
+);
+-- Un solo aviso abierto por problema.
+CREATE UNIQUE INDEX uq_avisos_clave_abierta ON avisos (clave) WHERE resuelto_en IS NULL;
+CREATE INDEX idx_avisos_creado ON avisos (creado_en DESC);
+
+-- "3" / "1,25 kg"
+CREATE OR REPLACE FUNCTION fn_fmt_cantidad(n NUMERIC, unidad TEXT) RETURNS TEXT AS $$
+    SELECT replace(trim_scale(n)::text, '.', ',') || CASE WHEN unidad = 'kg' THEN ' kg' ELSE '' END;
+$$ LANGUAGE sql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION fn_sincronizar_avisos() RETURNS VOID AS $$
+DECLARE
+    cfg configuracion%ROWTYPE;
+BEGIN
+    -- Dos pestañas abiertas sincronizan a la vez: una espera a la otra.
+    PERFORM pg_advisory_xact_lock(hashtext('fn_sincronizar_avisos'));
+    SELECT * INTO cfg FROM configuracion WHERE id = 1;
+
+    CREATE TEMP TABLE IF NOT EXISTS tmp_avisos (
+        tipo TEXT, titulo TEXT, texto TEXT, clave TEXT, producto_id INTEGER
+    ) ON COMMIT DROP;
+    TRUNCATE tmp_avisos;
+
+    IF cfg.notif_stock THEN
+        INSERT INTO tmp_avisos
+        SELECT 'stock',
+               CASE WHEN a.nivel = 'agotado' THEN 'Agotado' ELSE 'Stock bajo' END,
+               CASE WHEN a.nivel = 'agotado'
+                    THEN a.nombre || ' no tiene stock.'
+                    ELSE a.nombre || ' tiene solo ' || fn_fmt_cantidad(a.stock, a.unidad_medida)
+                         || ' (mínimo ' || fn_fmt_cantidad(a.stock_minimo, a.unidad_medida) || ').' END,
+               'stock:' || a.producto_id || ':' || a.nivel,
+               a.producto_id
+          FROM v_alertas_stock a;
+    END IF;
+
+    IF cfg.notif_vencimientos THEN
+        INSERT INTO tmp_avisos
+        SELECT 'vencimiento',
+               CASE WHEN v.nivel = 'vencido' THEN 'Vencido' ELSE 'Por vencer' END,
+               v.nombre || ' × ' || fn_fmt_cantidad(v.cantidad_inicial, v.unidad_medida) ||
+               CASE WHEN v.nivel = 'vencido' THEN ' venció el ' || to_char(v.fecha_vencimiento, 'DD/MM')
+                    WHEN v.dias_restantes = 0 THEN ' vence hoy'
+                    WHEN v.dias_restantes = 1 THEN ' vence mañana'
+                    ELSE ' vence en ' || v.dias_restantes || ' días' END
+               || '. Retira el lote cuando ya no esté en el estante.',
+               'lote:' || v.lote_id || ':' || v.nivel,
+               v.producto_id
+          FROM v_por_vencer v;
+    END IF;
+
+    IF cfg.notif_proveedores THEN
+        INSERT INTO tmp_avisos
+        SELECT 'proveedor',
+               'Hacer pedido',
+               'Pedir a ' || pr.nombre || ': ' || count(*) ||
+               CASE WHEN count(*) = 1 THEN ' producto' ELSE ' productos' END ||
+               ' con stock bajo (' || string_agg(a.nombre, ', ' ORDER BY a.nombre) || ').',
+               'proveedor:' || pr.id,
+               NULL
+          FROM v_alertas_stock a
+          JOIN proveedores pr ON pr.id = a.proveedor_id AND pr.activo
+         GROUP BY pr.id, pr.nombre;
+    END IF;
+
+    -- Cierra los problemas que ya no existen (o cuyo tipo se desactivó).
+    UPDATE avisos a
+       SET resuelto_en = now()
+     WHERE a.resuelto_en IS NULL
+       AND a.tipo <> 'info'
+       AND NOT EXISTS (SELECT 1 FROM tmp_avisos t WHERE t.clave = a.clave);
+
+    -- Abre los nuevos; en los que siguen abiertos solo actualiza el texto
+    -- (p. ej. el stock bajó de 3 a 2) sin marcarlos como no leídos.
+    INSERT INTO avisos (tipo, titulo, texto, clave, producto_id)
+    SELECT tipo, titulo, texto, clave, producto_id FROM tmp_avisos
+    ON CONFLICT (clave) WHERE resuelto_en IS NULL
+    DO UPDATE SET titulo = EXCLUDED.titulo, texto = EXCLUDED.texto
+     WHERE avisos.texto IS DISTINCT FROM EXCLUDED.texto
+        OR avisos.titulo IS DISTINCT FROM EXCLUDED.titulo;
+END; $$ LANGUAGE plpgsql;
+
+-- ---------------------------------------------------------------------
+-- 3. FOTOS DE PRODUCTOS (en la BD, comprimidas por el cliente)
+--    Tabla aparte para que las listas de productos no carguen los bytes.
+-- ---------------------------------------------------------------------
+CREATE TABLE producto_fotos (
+    producto_id     INTEGER     PRIMARY KEY REFERENCES productos(id) ON DELETE CASCADE,
+    datos           BYTEA       NOT NULL CHECK (octet_length(datos) BETWEEN 1 AND 524288),  -- máx. 512 KB
+    tipo            TEXT        NOT NULL CHECK (tipo IN ('image/webp', 'image/jpeg', 'image/png')),
+    actualizada_en  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- =====================================================================
 -- TRIGGERS: automatizan el stock y la auditoría
 -- =====================================================================
+
+-- Productos por unidad: cantidades enteras. SQLSTATE propio 'TD001' para
+-- que la API devuelva el mensaje tal cual.
+CREATE OR REPLACE FUNCTION fn_validar_cantidad() RETURNS TRIGGER AS $$
+DECLARE
+    v_cantidad NUMERIC := to_jsonb(NEW) ->> TG_ARGV[0];
+    v_producto productos%ROWTYPE;
+BEGIN
+    SELECT * INTO v_producto FROM productos WHERE id = NEW.producto_id;
+    IF v_producto.unidad_medida = 'unidad' AND v_cantidad <> trunc(v_cantidad) THEN
+        RAISE EXCEPTION '"%" se vende por unidad: la cantidad debe ser entera (se recibió %)',
+              v_producto.nombre, v_cantidad
+              USING ERRCODE = 'TD001';
+    END IF;
+    RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_validar_cantidad
+BEFORE INSERT OR UPDATE OF cantidad, producto_id ON detalle_venta
+FOR EACH ROW EXECUTE FUNCTION fn_validar_cantidad('cantidad');
+
+CREATE TRIGGER trg_validar_cantidad
+BEFORE INSERT OR UPDATE OF cantidad, producto_id ON detalle_compra
+FOR EACH ROW EXECUTE FUNCTION fn_validar_cantidad('cantidad');
+
+CREATE TRIGGER trg_validar_cantidad
+BEFORE INSERT OR UPDATE OF cantidad, producto_id ON movimientos_inventario
+FOR EACH ROW EXECUTE FUNCTION fn_validar_cantidad('cantidad');
+
+CREATE TRIGGER trg_validar_cantidad
+BEFORE INSERT OR UPDATE OF cantidad_inicial, producto_id ON lotes
+FOR EACH ROW EXECUTE FUNCTION fn_validar_cantidad('cantidad_inicial');
+
+-- Stock mínimo entero si es por unidad; y no se puede pasar un producto de
+-- 'kg' a 'unidad' si ya tiene movimientos con decimales.
+CREATE OR REPLACE FUNCTION fn_validar_unidad_producto() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.unidad_medida = 'unidad' THEN
+        IF NEW.stock_minimo <> trunc(NEW.stock_minimo) THEN
+            RAISE EXCEPTION '"%" se vende por unidad: el stock mínimo debe ser entero', NEW.nombre
+                  USING ERRCODE = 'TD001';
+        END IF;
+        IF TG_OP = 'UPDATE' AND OLD.unidad_medida = 'kg' AND EXISTS (
+               SELECT 1 FROM movimientos_inventario
+                WHERE producto_id = NEW.id AND cantidad <> trunc(cantidad)) THEN
+            RAISE EXCEPTION '"%" tiene movimientos con decimales: no puede pasar a venderse por unidad', NEW.nombre
+                  USING ERRCODE = 'TD001';
+        END IF;
+    END IF;
+    RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_validar_unidad_producto
+BEFORE INSERT OR UPDATE OF unidad_medida, stock_minimo ON productos
+FOR EACH ROW EXECUTE FUNCTION fn_validar_unidad_producto();
 
 -- Compra: cada línea suma stock y actualiza el costo del producto
 CREATE OR REPLACE FUNCTION fn_compra_a_inventario() RETURNS TRIGGER AS $$
@@ -248,15 +433,16 @@ FOR EACH ROW EXECUTE FUNCTION fn_anular_venta();
 CREATE OR REPLACE VIEW v_stock AS
 SELECT p.id AS producto_id,
        p.nombre,
+       p.unidad_medida,
        p.stock_minimo,
-       COALESCE(SUM(m.cantidad), 0)::int AS stock
+       COALESCE(SUM(m.cantidad), 0)::numeric(12,3) AS stock
   FROM productos p
   LEFT JOIN movimientos_inventario m ON m.producto_id = p.id
  GROUP BY p.id;
 
 -- Alertas del panel interno: stock bajo y agotados
 CREATE OR REPLACE VIEW v_alertas_stock AS
-SELECT s.producto_id, s.nombre, s.stock, s.stock_minimo,
+SELECT s.producto_id, s.nombre, s.unidad_medida, s.stock, s.stock_minimo,
        CASE WHEN s.stock <= 0 THEN 'agotado' ELSE 'bajo' END AS nivel,
        p.proveedor_id
   FROM v_stock s
@@ -269,6 +455,7 @@ CREATE OR REPLACE VIEW v_por_vencer AS
 SELECT l.id AS lote_id,
        l.producto_id,
        p.nombre,
+       p.unidad_medida,
        l.fecha_vencimiento,
        l.cantidad_inicial,
        l.fecha_vencimiento - h.hoy AS dias_restantes,
@@ -283,14 +470,16 @@ CREATE OR REPLACE VIEW v_catalogo_publico AS
 SELECT p.id,
        p.nombre,
        c.nombre AS categoria,
-       p.foto_url,
+       f.actualizada_en AS foto_actualizada_en,   -- NULL si no tiene foto
        p.precio,
+       p.unidad_medida,
        CASE WHEN s.stock <= 0              THEN 'agotado'
             WHEN s.stock <= p.stock_minimo THEN 'pocas_unidades'
             ELSE 'disponible' END AS disponibilidad
   FROM productos p
   JOIN categorias c  ON c.id = p.categoria_id
   JOIN v_stock    s  ON s.producto_id = p.id
+  LEFT JOIN producto_fotos f ON f.producto_id = p.id
  WHERE p.activo AND c.activa;
 
 -- Anuncios visibles hoy
@@ -329,14 +518,15 @@ SELECT c.id AS caja_id,
 CREATE OR REPLACE VIEW v_ventas_por_producto AS
 SELECT d.producto_id,
        p.nombre,
+       p.unidad_medida,
        SUM(d.cantidad)                                          AS unidades,
-       SUM(d.cantidad * d.precio_unit - d.descuento)            AS ingresos,
-       SUM(d.cantidad * d.precio_unit - d.descuento
-           - d.cantidad * d.costo_unit)                         AS margen
+       SUM(ROUND(d.cantidad * d.precio_unit, 2) - d.descuento)  AS ingresos,
+       SUM(ROUND(d.cantidad * d.precio_unit, 2) - d.descuento
+           - ROUND(d.cantidad * d.costo_unit, 2))               AS margen
   FROM detalle_venta d
   JOIN ventas    v ON v.id = d.venta_id AND v.estado = 'completada'
   JOIN productos p ON p.id = d.producto_id
- GROUP BY d.producto_id, p.nombre;
+ GROUP BY d.producto_id, p.nombre, p.unidad_medida;
 
 COMMIT;
 

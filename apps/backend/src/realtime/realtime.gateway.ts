@@ -26,6 +26,16 @@ export const Eventos = {
   AnunciosActualizados: 'anuncios:actualizados',
   /** {} — lotes nuevos o retirados */
   LotesActualizados: 'lotes:actualizados',
+  /** {} — avisos leídos, nuevos avisos informativos o cambio de configuración */
+  AvisosActualizados: 'avisos:actualizados',
+  /** {} — datos de la tienda o preferencias de notificaciones */
+  ConfiguracionActualizada: 'configuracion:actualizada',
+  /** { proveedorId: number } */
+  ProveedorActualizado: 'proveedor:actualizado',
+  /** { categoriaId: number } */
+  CategoriaActualizada: 'categoria:actualizada',
+  /** { compraId: number } */
+  CompraRegistrada: 'compra:registrada',
 } as const;
 
 export type Evento = (typeof Eventos)[keyof typeof Eventos];

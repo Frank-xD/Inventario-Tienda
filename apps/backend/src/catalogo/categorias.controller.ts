@@ -8,8 +8,10 @@ import {
   Query,
 } from '@nestjs/common';
 import { z } from 'zod';
+import { AvisosService } from '../avisos/avisos.service.js';
 import { idParam, texto } from '../common/schemas.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { Eventos, RealtimeGateway } from '../realtime/realtime.gateway.js';
 
 const crearCategoria = z.object({
   nombre: texto,
@@ -19,7 +21,11 @@ const editarCategoria = crearCategoria.partial();
 
 @Controller('categorias')
 export class CategoriasController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeGateway,
+    private readonly avisos: AvisosService,
+  ) {}
 
   @Get()
   listar(@Query('todas') todas?: string) {
@@ -31,17 +37,28 @@ export class CategoriasController {
   }
 
   @Post()
-  crear(
+  async crear(
     @Body({ schema: crearCategoria }) body: z.infer<typeof crearCategoria>,
   ) {
-    return this.prisma.categoria.create({ data: body });
+    const categoria = await this.prisma.categoria.create({ data: body });
+    // Ocultar/mostrar una categoría cambia el catálogo público.
+    this.realtime.emit(Eventos.CategoriaActualizada, {
+      categoriaId: categoria.id,
+    });
+    await this.avisos.informar(`Se creó la categoría ${categoria.nombre}.`);
+    return categoria;
   }
 
   @Patch(':id')
-  editar(
+  async editar(
     @Param('id', { schema: idParam }) id: number,
     @Body({ schema: editarCategoria }) body: z.infer<typeof editarCategoria>,
   ) {
-    return this.prisma.categoria.update({ where: { id }, data: body });
+    const categoria = await this.prisma.categoria.update({
+      where: { id },
+      data: body,
+    });
+    this.realtime.emit(Eventos.CategoriaActualizada, { categoriaId: id });
+    return categoria;
   }
 }

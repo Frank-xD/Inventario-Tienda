@@ -1,18 +1,38 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
+import { AvisosService } from '../avisos/avisos.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Eventos, RealtimeGateway } from '../realtime/realtime.gateway.js';
+import { tipoDeImagen, urlFoto } from './fotos.js';
 import type {
   CrearProducto,
   EditarProducto,
   FiltrosProductos,
 } from './productos.schemas.js';
 
+/** Máximo que acepta producto_fotos (CHECK en la BD). El cliente comprime antes. */
+export const MAX_FOTO_BYTES = 512 * 1024;
+
+/** Solo la fecha de la foto: los bytes se piden aparte en GET /productos/:id/foto. */
+const conFoto = { foto: { select: { actualizadaEn: true } } } as const;
+
+type ConFoto<T> = T & { foto: { actualizadaEn: Date } | null };
+
+/** Reemplaza la relación `foto` por `fotoUrl` (o null). */
+function sinBytes<T extends { id: number }>({ foto, ...p }: ConFoto<T>) {
+  return { ...p, fotoUrl: foto ? urlFoto(p.id, foto.actualizadaEn) : null };
+}
+
 @Injectable()
 export class ProductosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly avisos: AvisosService,
   ) {}
 
   /** Productos con su stock actual (vista v_stock). */
@@ -36,10 +56,14 @@ export class ProductosService {
       include: {
         categoria: { select: { id: true, nombre: true } },
         proveedor: { select: { id: true, nombre: true } },
+        ...conFoto,
       },
     });
     const stock = await this.stockDe(productos.map((p) => p.id));
-    return productos.map((p) => ({ ...p, stock: stock.get(p.id) ?? 0 }));
+    return productos.map((p) => ({
+      ...sinBytes(p),
+      stock: stock.get(p.id) ?? new Prisma.Decimal(0),
+    }));
   }
 
   async detalle(id: number) {
@@ -50,19 +74,29 @@ export class ProductosService {
         proveedor: true,
         lotes: { orderBy: { fechaVencimiento: 'asc' } },
         movimientosInventario: { orderBy: { creadoEn: 'desc' }, take: 30 },
+        ...conFoto,
       },
     });
     const stock = await this.stockDe([id]);
-    return { ...producto, stock: stock.get(id) ?? 0 };
+    return {
+      ...sinBytes(producto),
+      stock: stock.get(id) ?? new Prisma.Decimal(0),
+    };
   }
 
   /** Busca por código de barras (lector del POS). */
   async porCodigo(codigo: string) {
-    const producto = await this.prisma.producto.findUniqueOrThrow({
+    const producto = await this.prisma.producto.findUnique({
       where: { codigoBarras: codigo },
+      include: conFoto,
     });
+    if (!producto)
+      throw new NotFoundException(`No hay un producto con el código ${codigo}`);
     const stock = await this.stockDe([producto.id]);
-    return { ...producto, stock: stock.get(producto.id) ?? 0 };
+    return {
+      ...sinBytes(producto),
+      stock: stock.get(producto.id) ?? new Prisma.Decimal(0),
+    };
   }
 
   async crear({ stockInicial, fechaVencimiento, ...data }: CrearProducto) {
@@ -98,6 +132,10 @@ export class ProductosService {
         productoIds: [producto.id],
       });
     }
+    await this.avisos.informar(
+      `Se agregó el producto ${producto.nombre}.`,
+      producto.id,
+    );
     return this.detalle(producto.id);
   }
 
@@ -108,11 +146,65 @@ export class ProductosService {
   }
 
   async stockDe(ids: number[]) {
-    if (ids.length === 0) return new Map<number, number>();
+    if (ids.length === 0) return new Map<number, Prisma.Decimal>();
     const filas = await this.prisma.vStock.findMany({
       where: { productoId: { in: ids } },
       select: { productoId: true, stock: true },
     });
     return new Map(filas.map((f) => [f.productoId, f.stock]));
+  }
+
+  // -------------------------------------------------------------------
+  // Fotos (bytes en producto_fotos)
+  // -------------------------------------------------------------------
+
+  async foto(id: number) {
+    const foto = await this.prisma.productoFoto.findUnique({
+      where: { productoId: id },
+    });
+    if (!foto) throw new NotFoundException('El producto no tiene foto');
+    return foto;
+  }
+
+  /**
+   * Guarda (o reemplaza) la foto. El tipo se detecta por los bytes, no por
+   * lo que declara el navegador.
+   */
+  async guardarFoto(id: number, datos: Buffer) {
+    if (datos.length === 0)
+      throw new BadRequestException('La imagen está vacía');
+    if (datos.length > MAX_FOTO_BYTES) {
+      throw new BadRequestException(
+        `La imagen pesa ${Math.round(datos.length / 1024)} KB; el máximo es ${MAX_FOTO_BYTES / 1024} KB`,
+      );
+    }
+    const tipo = tipoDeImagen(datos);
+    if (!tipo)
+      throw new BadRequestException(
+        'Formato no admitido: usa WebP, JPEG o PNG',
+      );
+
+    await this.prisma.producto.findUniqueOrThrow({
+      where: { id },
+      select: { id: true },
+    });
+    const bytes = new Uint8Array(datos);
+    const foto = await this.prisma.productoFoto.upsert({
+      where: { productoId: id },
+      create: { productoId: id, datos: bytes, tipo },
+      update: { datos: bytes, tipo, actualizadaEn: new Date() },
+      select: { actualizadaEn: true },
+    });
+    this.realtime.emit(Eventos.ProductoActualizado, { productoId: id });
+    return {
+      fotoUrl: urlFoto(id, foto.actualizadaEn),
+      bytes: datos.length,
+      tipo,
+    };
+  }
+
+  async borrarFoto(id: number) {
+    await this.prisma.productoFoto.deleteMany({ where: { productoId: id } });
+    this.realtime.emit(Eventos.ProductoActualizado, { productoId: id });
   }
 }

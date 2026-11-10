@@ -38,13 +38,14 @@ export class ReportesController {
         JOIN v_stock s ON s.producto_id = p.id
        WHERE p.activo`;
 
-    const [alertas, vencimientos, caja] = await Promise.all([
+    const [alertas, vencimientos, caja, proveedores] = await Promise.all([
       this.prisma.vAlertaStock.groupBy({ by: ['nivel'], _count: true }),
       this.prisma.vPorVencer.groupBy({ by: ['nivel'], _count: true }),
       this.prisma.caja.findFirst({
         where: { cerradaEn: null },
         select: { id: true },
       }),
+      this.prisma.proveedor.groupBy({ by: ['activo'], _count: true }),
     ]);
     const contar = (
       filas: { nivel: string; _count: number }[],
@@ -75,8 +76,64 @@ export class ReportesController {
         vencidos: contar(vencimientos, 'vencido'),
         porVencer: contar(vencimientos, 'por_vencer'),
       },
+      proveedores: {
+        activos: proveedores.find((p) => p.activo)?._count ?? 0,
+        inactivos: proveedores.find((p) => !p.activo)?._count ?? 0,
+      },
       cajaAbiertaId: caja?.id ?? null,
     };
+  }
+
+  /**
+   * Últimos movimientos para el panel: ventas, compras y ajustes/mermas de
+   * inventario en una sola lista, del más reciente al más antiguo.
+   */
+  @Get('movimientos-recientes')
+  async movimientosRecientes(
+    @Query('limite', {
+      schema: z.coerce.number().int().min(1).max(100).default(10),
+    })
+    limite: number,
+  ) {
+    const filas = await this.prisma.$queryRaw<
+      {
+        tipo: 'venta' | 'compra' | 'ajuste' | 'merma';
+        id: number;
+        fecha: Date;
+        detalle: string;
+        total: unknown;
+        estado: string;
+      }[]
+    >`
+      (SELECT 'venta' AS tipo, v.id, v.fecha,
+              COUNT(d.id) || CASE WHEN COUNT(d.id) = 1 THEN ' producto' ELSE ' productos' END
+                || ' · ' || CASE v.metodo_pago WHEN 'efectivo' THEN 'efectivo' ELSE 'transferencia/QR' END AS detalle,
+              v.total, v.estado
+         FROM ventas v JOIN detalle_venta d ON d.venta_id = v.id
+        GROUP BY v.id
+        ORDER BY v.fecha DESC LIMIT ${limite})
+      UNION ALL
+      (SELECT 'compra', c.id, c.fecha,
+              p.nombre || ' · ' || COUNT(d.id) || CASE WHEN COUNT(d.id) = 1 THEN ' producto' ELSE ' productos' END,
+              c.total, 'completada'
+         FROM compras c
+         JOIN proveedores p ON p.id = c.proveedor_id
+         JOIN detalle_compra d ON d.compra_id = c.id
+        GROUP BY c.id, p.nombre
+        ORDER BY c.fecha DESC LIMIT ${limite})
+      UNION ALL
+      (SELECT m.tipo, m.id::int, m.creado_en,
+              p.nombre || ' ' || CASE WHEN m.cantidad > 0 THEN '+' ELSE '' END
+                || fn_fmt_cantidad(m.cantidad, p.unidad_medida)
+                || COALESCE(' · ' || m.motivo, ''),
+              ROUND(ABS(m.cantidad) * p.costo, 2), 'completada'
+         FROM movimientos_inventario m
+         JOIN productos p ON p.id = m.producto_id
+        WHERE m.tipo IN ('ajuste', 'merma')
+        ORDER BY m.creado_en DESC LIMIT ${limite})
+      ORDER BY fecha DESC
+      LIMIT ${limite}`;
+    return filas.map((f) => ({ ...f, total: n(f.total) }));
   }
 
   /** Ventas completadas por día (zona horaria de la tienda), con días en cero. */

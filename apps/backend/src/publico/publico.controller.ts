@@ -1,5 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { z } from 'zod';
+import { urlFoto } from '../catalogo/fotos.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const filtros = z.object({
@@ -16,13 +17,26 @@ export class PublicoController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get('catalogo')
-  catalogo(@Query({ schema: filtros }) f: z.infer<typeof filtros>) {
-    return this.prisma.vCatalogoPublico.findMany({
+  async catalogo(@Query({ schema: filtros }) f: z.infer<typeof filtros>) {
+    const filas = await this.prisma.vCatalogoPublico.findMany({
       where: {
         ...(f.q && { nombre: { contains: f.q, mode: 'insensitive' } }),
         ...(f.categoria && { categoria: f.categoria }),
       },
       orderBy: [{ categoria: 'asc' }, { nombre: 'asc' }],
+    });
+    return filas.map(({ fotoActualizadaEn, ...p }) => ({
+      ...p,
+      fotoUrl: fotoActualizadaEn ? urlFoto(p.id, fotoActualizadaEn) : null,
+    }));
+  }
+
+  /** Nombre y contacto de la tienda (configuración), sin las preferencias internas. */
+  @Get('tienda')
+  tienda() {
+    return this.prisma.configuracion.findUniqueOrThrow({
+      where: { id: 1 },
+      select: { nombreTienda: true, correo: true, telefono: true },
     });
   }
 

@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { dinero, fecha, id, texto, textoOpcional } from '../common/schemas.js';
+import {
+  cantidad,
+  dinero,
+  fecha,
+  id,
+  texto,
+  textoOpcional,
+  unidadMedida,
+} from '../common/schemas.js';
 
 export const crearProducto = z.object({
   codigoBarras: textoOpcional,
@@ -9,14 +17,15 @@ export const crearProducto = z.object({
   proveedorId: id.optional().nullable(),
   precio: dinero,
   costo: dinero.optional(),
-  stockMinimo: z.coerce.number().int().nonnegative().optional(),
-  fotoUrl: z.url().optional().nullable(),
+  /** 'kg' admite cantidades con decimales; 'unidad' (por defecto), solo enteras. */
+  unidadMedida: unidadMedida.optional(),
+  stockMinimo: z.coerce.number().nonnegative().multipleOf(0.001).optional(),
   activo: z.boolean().optional(),
   /**
    * Stock con el que se da de alta el producto. Se registra como un
    * movimiento 'ajuste' con motivo "Stock inicial" (el stock nunca se edita).
    */
-  stockInicial: z.coerce.number().int().positive().optional(),
+  stockInicial: cantidad.optional(),
   /** Si el stock inicial vence, se registra su lote (sin compra). */
   fechaVencimiento: fecha.optional(),
 });

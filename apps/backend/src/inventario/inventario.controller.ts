@@ -24,7 +24,7 @@ const ajuste = z.object({
   /** Con signo: positivo suma, negativo resta. */
   cantidad: z.coerce
     .number()
-    .int()
+    .multipleOf(0.001)
     .refine((n) => n !== 0, 'No puede ser 0'),
   motivo: texto,
 });

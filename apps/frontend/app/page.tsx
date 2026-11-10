@@ -1,5 +1,5 @@
-import { Panel } from "@/components/dashboard/panel";
+import { Inicio } from "@/components/inicio/inicio";
 
 export default function Home() {
-  return <Panel />;
+  return <Inicio />;
 }

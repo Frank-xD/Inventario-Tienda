@@ -44,10 +44,25 @@ export class PrismaExceptionFilter implements ExceptionFilter {
     const res = host.switchToHttp().getResponse<Response>();
     const meta = (error.meta ?? {}) as {
       driverAdapterError?: {
-        cause?: { originalCode?: string; constraint?: { index?: string } };
+        cause?: {
+          originalCode?: string;
+          originalMessage?: string;
+          constraint?: { index?: string };
+        };
       };
     };
     const cause = meta.driverAdapterError?.cause;
+
+    // Reglas de negocio de los triggers (RAISE ... USING ERRCODE = 'TD001'):
+    // su mensaje ya está escrito para el usuario.
+    if (cause?.originalCode === 'TD001' && cause.originalMessage) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: cause.originalMessage,
+        code: cause.originalCode,
+      });
+    }
+
     const mapped =
       (cause?.originalCode && PG[cause.originalCode]) || PRISMA[error.code];
 

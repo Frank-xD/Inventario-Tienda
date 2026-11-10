@@ -45,8 +45,10 @@ type ProductoSeed = {
   precio: number;
   costo: number;
   minimo: number;
-  /** Unidades de la compra inicial. */
+  /** Unidades (o kg) de la compra inicial. */
   compra: number;
+  /** Por defecto se vende por unidad. */
+  unidad?: 'kg';
   /** Días hasta el vencimiento del lote comprado (si vence). */
   vence?: number;
 };
@@ -163,6 +165,29 @@ const productos: ProductoSeed[] = [
     minimo: 10,
     compra: 40,
   },
+  // A granel: se venden por peso (precio por kg, cantidades con decimales).
+  {
+    codigo: null,
+    nombre: 'Arroz a granel',
+    categoria: 'Abarrotes',
+    proveedor: 'Distribuidora El Alto',
+    precio: 8.5,
+    costo: 6.2,
+    minimo: 5,
+    compra: 46,
+    unidad: 'kg',
+  },
+  {
+    codigo: null,
+    nombre: 'Azúcar a granel',
+    categoria: 'Abarrotes',
+    proveedor: 'Distribuidora El Alto',
+    precio: 7.5,
+    costo: 5.6,
+    minimo: 5,
+    compra: 46,
+    unidad: 'kg',
+  },
   {
     codigo: '7771234000097',
     nombre: 'Aceite vegetal 900ml',
@@ -243,6 +268,7 @@ async function main() {
         precio: p.precio,
         costo: p.costo,
         stockMinimo: p.minimo,
+        unidadMedida: p.unidad ?? 'unidad',
       },
     });
     productoId.set(p.nombre, creado.id);
@@ -291,7 +317,12 @@ async function main() {
       const usados = new Set<number>();
       for (let i = 0; i < entre(1, 3); i++) {
         const id = [...precios.keys()][entre(0, precios.size - 1)];
-        const cantidad = entre(1, precios.get(id)!.precio < 2 ? 10 : 3);
+        const prod = precios.get(id)!;
+        // Por kg: de 0,25 a 2 kg en pasos de 250 g.
+        const cantidad =
+          prod.unidad === 'kg'
+            ? entre(1, 8) * 0.25
+            : entre(1, prod.precio < 2 ? 10 : 3);
         // Deja algo de stock para que no todo quede agotado.
         if (usados.has(id) || stock.get(id)! - cantidad < 2) continue;
         usados.add(id);
@@ -305,7 +336,8 @@ async function main() {
         return { ...it, precioUnit: p.precio, costoUnit: p.costo };
       });
       const total = detalles.reduce(
-        (acc, it) => acc + it.cantidad * it.precioUnit,
+        // Igual que la API: cada línea se redondea al centavo.
+        (acc, it) => acc + Math.round(it.cantidad * it.precioUnit * 100) / 100,
         0,
       );
       const metodoPago = azar() < 0.65 ? 'efectivo' : 'transferencia';

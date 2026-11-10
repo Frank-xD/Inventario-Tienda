@@ -13,7 +13,11 @@ import type { CrearVenta, FiltrosVentas } from './ventas.schemas.js';
 const { Decimal } = Prisma;
 
 const include = {
-  detalles: { include: { producto: { select: { id: true, nombre: true } } } },
+  detalles: {
+    include: {
+      producto: { select: { id: true, nombre: true, unidadMedida: true } },
+    },
+  },
 } as const;
 
 @Injectable()
@@ -70,23 +74,30 @@ export class VentasService {
         ).map((s) => [s.productoId, s.stock]),
       );
 
-      // Unidades pedidas por producto (puede repetirse en varias líneas).
-      const pedido = new Map<number, number>();
+      // Cantidad pedida por producto (puede repetirse en varias líneas).
+      // Se suma con Decimal: con kg, 0.1 + 0.2 en number no da 0.3.
+      const pedido = new Map<number, Prisma.Decimal>();
       for (const item of input.items) {
         pedido.set(
           item.productoId,
-          (pedido.get(item.productoId) ?? 0) + item.cantidad,
+          (pedido.get(item.productoId) ?? new Decimal(0)).add(item.cantidad),
         );
       }
-      for (const [productoId, unidades] of pedido) {
+      for (const [productoId, pedida] of pedido) {
         const p = porId.get(productoId);
         if (!p) throw new NotFoundException(`Producto ${productoId} no existe`);
         if (!p.activo)
           throw new BadRequestException(`"${p.nombre}" está inactivo`);
-        const disponible = stock.get(productoId) ?? 0;
-        if (disponible < unidades) {
+        if (p.unidadMedida === 'unidad' && !pedida.isInteger()) {
+          throw new BadRequestException(
+            `"${p.nombre}" se vende por unidad: la cantidad debe ser entera`,
+          );
+        }
+        const disponible = stock.get(productoId) ?? new Decimal(0);
+        if (disponible.lessThan(pedida)) {
+          const u = p.unidadMedida === 'kg' ? ' kg' : '';
           throw new ConflictException(
-            `Stock insuficiente de "${p.nombre}": hay ${disponible}, se piden ${unidades}`,
+            `Stock insuficiente de "${p.nombre}": hay ${disponible.toString()}${u}, se piden ${pedida.toString()}${u}`,
           );
         }
       }
@@ -94,7 +105,10 @@ export class VentasService {
       let subtotal = new Decimal(0);
       const detalles = input.items.map((item) => {
         const p = porId.get(item.productoId)!;
-        const bruto = p.precio.mul(item.cantidad);
+        // Con kg el importe puede tener más de 2 decimales: se redondea al centavo.
+        const bruto = p.precio
+          .mul(item.cantidad)
+          .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         if (bruto.lessThan(item.descuento)) {
           throw new BadRequestException(
             `El descuento de "${p.nombre}" supera el importe de la línea`,

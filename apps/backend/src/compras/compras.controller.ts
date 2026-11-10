@@ -99,6 +99,7 @@ export class ComprasController {
     });
 
     const productoIds = [...new Set(body.detalles.map((d) => d.productoId))];
+    this.realtime.emit(Eventos.CompraRegistrada, { compraId });
     this.realtime.emit(Eventos.StockActualizado, { productoIds });
     if (body.detalles.some((d) => d.fechaVencimiento)) {
       this.realtime.emit(Eventos.LotesActualizados);

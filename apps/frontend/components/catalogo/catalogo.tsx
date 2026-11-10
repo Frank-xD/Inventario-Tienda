@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Megaphone, Search } from "lucide-react";
-import { api, bs, type Anuncio, type ProductoCatalogo } from "@/lib/api";
+import { ArrowLeft, Megaphone, Search, Package } from "lucide-react";
+import { api, bs, urlApi, type Anuncio, type ProductoCatalogo, type Tienda } from "@/lib/api";
+import { sufijoPrecio } from "@/lib/cantidad";
 import { useLiveData } from "@/hooks/use-live-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/input";
 
 const fetchCatalogo = () => api<ProductoCatalogo[]>("/publico/catalogo");
 const fetchAnuncios = () => api<Anuncio[]>("/publico/anuncios");
+const fetchTienda = () => api<Tienda>("/publico/tienda");
 
 const DISPONIBILIDAD = {
   disponible: { texto: "Disponible", variant: "secondary" },
@@ -21,8 +23,9 @@ const DISPONIBILIDAD = {
 
 /** Portal público: precios y disponibilidad (sin cifras exactas de stock). */
 export function Catalogo() {
-  const catalogo = useLiveData(fetchCatalogo, ["stock:actualizado", "producto:actualizado"]);
+  const catalogo = useLiveData(fetchCatalogo, ["stock:actualizado", "producto:actualizado", "categoria:actualizada"]);
   const anuncios = useLiveData(fetchAnuncios, ["anuncios:actualizados"]);
+  const tienda = useLiveData(fetchTienda, ["configuracion:actualizada"]);
   const [q, setQ] = useState("");
   const [categoria, setCategoria] = useState<string | null>(null);
 
@@ -43,11 +46,14 @@ export function Catalogo() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Mi Tiendita</h1>
-          <p className="text-muted-foreground text-sm">Precios y disponibilidad al momento</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{tienda.data?.nombreTienda ?? "Mi Tiendita"}</h1>
+          <p className="text-muted-foreground text-sm">
+            Precios y disponibilidad al momento
+            {tienda.data?.telefono && <> · Tel. {tienda.data.telefono}</>}
+          </p>
         </div>
         <Button variant="ghost" size="sm" asChild>
-          <Link href="/">
+          <Link href="/panel">
             <ArrowLeft /> Panel
           </Link>
         </Button>
@@ -98,7 +104,15 @@ export function Catalogo() {
         {productos.map((p) => {
           const d = DISPONIBILIDAD[p.disponibilidad];
           return (
-            <Card key={p.id} className="gap-3 py-4">
+            <Card key={p.id} className="gap-3 overflow-hidden pt-0 pb-4">
+              <div className="bg-muted text-muted-foreground flex aspect-[4/3] items-center justify-center">
+                {p.fotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- imagen servida por la API
+                  <img src={urlApi(p.fotoUrl)!} alt={p.nombre} loading="lazy" className="size-full object-cover" />
+                ) : (
+                  <Package className="size-8" aria-hidden />
+                )}
+              </div>
               <CardContent className="flex flex-col gap-2 px-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -107,7 +121,10 @@ export function Catalogo() {
                   </div>
                   <Badge variant={d.variant}>{d.texto}</Badge>
                 </div>
-                <p className="text-lg font-semibold tabular-nums">{bs.format(Number(p.precio))}</p>
+                <p className="text-lg font-semibold tabular-nums">
+                  {bs.format(Number(p.precio))}
+                  <span className="text-muted-foreground text-sm font-normal">{sufijoPrecio(p.unidadMedida)}</span>
+                </p>
               </CardContent>
             </Card>
           );
