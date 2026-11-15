@@ -105,10 +105,15 @@ export class VentasService {
       let subtotal = new Decimal(0);
       const detalles = input.items.map((item) => {
         const p = porId.get(item.productoId)!;
-        // Con kg el importe puede tener más de 2 decimales: se redondea al centavo.
-        const bruto = p.precio
+        // Con kg el importe se redondea al medio boliviano más cercano
+        // (10,35 → 10,50; 10,85 → 11,00). Por unidad queda al centavo.
+        const alCentavo = p.precio
           .mul(item.cantidad)
           .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const bruto =
+          p.unidadMedida === 'kg'
+            ? alCentavo.mul(2).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).div(2)
+            : alCentavo;
         if (bruto.lessThan(item.descuento)) {
           throw new BadRequestException(
             `El descuento de "${p.nombre}" supera el importe de la línea`,

@@ -53,6 +53,9 @@ export interface Aviso {
   titulo: string;
   texto: string;
   fecha: string;
+  productoId: number | null;
+  /** Proveedor del aviso "Hacer pedido". */
+  proveedorId: number | null;
   leido: boolean;
   /** El problema ya no existe (se repuso el stock, se retiró el lote…). */
   resuelto: boolean;
@@ -96,6 +99,8 @@ export const aAviso = (a: AvisoApi): Aviso => ({
   titulo: a.titulo,
   texto: a.texto,
   fecha: a.creadoEn,
+  productoId: a.productoId,
+  proveedorId: a.clave?.startsWith("proveedor:") ? Number(a.clave.split(":")[1]) : null,
   leido: a.leidoEn !== null,
   resuelto: a.resueltoEn !== null,
 });

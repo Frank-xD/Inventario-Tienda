@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CalendarClock, CheckCheck, Info, Truck, Check } from "lucide-react";
-import type { TipoAviso } from "@/lib/modelos";
+import Link from "next/link";
+import { AlertTriangle, CalendarClock, CheckCheck, Info, Package, ShoppingBag, Truck, Check } from "lucide-react";
+import type { Aviso, TipoAviso } from "@/lib/modelos";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Modal } from "@/components/ui/dialog";
 import { HaceCuanto, useAdmin } from "./admin-store";
 import { EstadoCarga, SinResultados, Titulo } from "./comun";
 
@@ -100,5 +102,68 @@ export function Avisos() {
         {!cargando && visibles.length === 0 && <SinResultados>No hay avisos en esta categoría.</SinResultados>}
       </div>
     </>
+  );
+}
+
+const ETIQUETA: Record<TipoAviso, string> = {
+  stock: "Stock",
+  vencimiento: "Vencimiento",
+  proveedor: "Pedido a proveedor",
+  info: "Información",
+};
+
+/** A dónde lleva cada aviso del sistema. */
+function destinos(a: Aviso): { href: string; label: string; icon: typeof Info; principal?: boolean }[] {
+  const producto = a.productoId ? `/panel/productos?producto=${a.productoId}` : null;
+  switch (a.tipo) {
+    case "stock":
+      return [
+        { href: "/compra", label: "Registrar compra", icon: ShoppingBag, principal: true },
+        ...(producto ? [{ href: producto, label: "Ver producto", icon: Package }] : []),
+      ];
+    case "vencimiento":
+      return producto ? [{ href: producto, label: "Ver producto", icon: Package, principal: true }] : [];
+    case "proveedor":
+      return a.proveedorId
+        ? [
+            { href: `/compra?proveedor=${a.proveedorId}`, label: "Hacer el pedido", icon: ShoppingBag, principal: true },
+            { href: "/panel/proveedores", label: "Ver proveedores", icon: Truck },
+          ]
+        : [];
+    case "info":
+      return producto ? [{ href: producto, label: "Ver producto", icon: Package }] : [];
+  }
+}
+
+/** Modal con el aviso completo y los accesos al asunto. */
+export function DetalleAviso({ aviso, onCerrar }: { aviso: Aviso | null; onCerrar: () => void }) {
+  return (
+    <Modal open={aviso !== null} onOpenChange={(o) => !o && onCerrar()} titulo={aviso?.titulo ?? ""} className="max-w-md">
+      {aviso && (
+        <div className="flex flex-col gap-5">
+          <div className="flex items-start gap-3">
+            <IconoAviso tipo={aviso.tipo} />
+            <div className="flex min-w-0 flex-col gap-1">
+              <p className="text-sm leading-relaxed">{aviso.texto}</p>
+              <p className="text-muted-foreground text-xs">
+                {ETIQUETA[aviso.tipo]} · <HaceCuanto iso={aviso.fecha} />
+                {aviso.resuelto && " · Ya se resolvió"}
+              </p>
+            </div>
+          </div>
+          {!aviso.resuelto && destinos(aviso).length > 0 && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {destinos(aviso).map((d) => (
+                <Button key={d.href} variant={d.principal ? "default" : "outline"} asChild>
+                  <Link href={d.href} onClick={onCerrar}>
+                    <d.icon /> {d.label}
+                  </Link>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }

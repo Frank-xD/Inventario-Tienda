@@ -8,6 +8,7 @@ import {
   BarChart3,
   Bell,
   CheckCheck,
+  ClipboardList,
   Menu,
   Package,
   PanelLeftClose,
@@ -18,16 +19,18 @@ import {
   Truck,
   X,
 } from "lucide-react";
+import type { Aviso } from "@/lib/modelos";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { AdminStoreProvider, useAdmin } from "./admin-store";
-import { IconoAviso } from "./avisos";
+import { AdminStoreProvider, HaceCuanto, useAdmin } from "./admin-store";
+import { DetalleAviso, IconoAviso } from "./avisos";
 
 const NAV = [
   { href: "/panel", label: "Estadísticas generales", icon: BarChart3 },
   { href: "/panel/proveedores", label: "Proveedores", icon: Truck },
   { href: "/panel/categorias", label: "Categorías", icon: Tags },
   { href: "/panel/productos", label: "Productos", icon: Package },
+  { href: "/panel/registros", label: "Registros", icon: ClipboardList },
   { href: "/panel/avisos", label: "Avisos", icon: Bell },
 ] as const;
 
@@ -176,9 +179,17 @@ function Sidebar({ colapsado, onNavegar }: { colapsado: boolean; onNavegar?: () 
 function Notificaciones() {
   const { avisos, noLeidos, marcarLeido, marcarTodosLeidos } = useAdmin();
   const [abierto, setAbierto] = useState(false);
+  const [detalle, setDetalle] = useState<Aviso | null>(null);
   const recientes = avisos.filter((a) => !a.leido && !a.resuelto).slice(0, 5);
 
+  const ver = (a: Aviso) => {
+    setAbierto(false);
+    setDetalle(a);
+    if (!a.leido) void marcarLeido(a.id);
+  };
+
   return (
+    <>
     <Popover.Root open={abierto} onOpenChange={setAbierto}>
       <Popover.Trigger asChild>
         <Button
@@ -223,13 +234,18 @@ function Notificaciones() {
                 <li key={a.id}>
                   <button
                     type="button"
-                    onClick={() => void marcarLeido(a.id)}
-                    className="hover:bg-accent flex w-full items-start gap-3 px-4 py-3 text-left"
-                    title="Marcar como leído"
+                    onClick={() => ver(a)}
+                    className="hover:bg-accent flex w-full items-center gap-3 px-4 py-2.5 text-left"
                   >
                     <IconoAviso tipo={a.tipo} />
-                    <span className="text-sm">
-                      <span className="font-medium">{a.titulo}:</span> {a.texto}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium">{a.titulo}</span>
+                        <span className="text-muted-foreground shrink-0 text-[11px]">
+                          <HaceCuanto iso={a.fecha} />
+                        </span>
+                      </span>
+                      <span className="text-muted-foreground truncate text-xs">{a.texto}</span>
                     </span>
                   </button>
                 </li>
@@ -246,5 +262,7 @@ function Notificaciones() {
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+    <DetalleAviso aviso={detalle} onCerrar={() => setDetalle(null)} />
+    </>
   );
 }

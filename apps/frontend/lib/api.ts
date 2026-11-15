@@ -106,6 +106,9 @@ export interface AvisoApi {
   tipo: TipoAviso;
   titulo: string;
   texto: string;
+  /** "stock:<producto>:<nivel>", "lote:<lote>:<nivel>", "proveedor:<id>" o null. */
+  clave: string | null;
+  productoId: number | null;
   creadoEn: string;
   leidoEn: string | null;
   resueltoEn: string | null;

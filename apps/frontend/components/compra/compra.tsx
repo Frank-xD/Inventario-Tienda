@@ -2,47 +2,42 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, PackageOpen, Plus, Trash2 } from "lucide-react";
+import { CalendarPlus, CheckCircle2, PackageOpen, Search, Trash2 } from "lucide-react";
 import { bs, enviar } from "@/lib/api";
-import {
-  errorCantidad,
-  formatCantidad,
-  importe,
-  pasoCantidad,
-  sufijoPrecio,
-  sumarCantidad,
-} from "@/lib/cantidad";
+import { errorCantidad, importe, pasoCantidad, sumarCantidad } from "@/lib/cantidad";
 import { nombreDe, type Producto } from "@/lib/modelos";
 import { useCategorias, useProductos, useProveedores } from "@/hooks/use-datos";
 import { ErrorEnvio, EstadoCarga, useEnvio } from "@/components/admin/comun";
 import { AppHeader } from "@/components/nav/app-header";
+import { ImagenProducto, TarjetaProducto } from "@/components/productos/tarjeta-producto";
 import { CodigoInput } from "@/components/scanner/codigo-input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
+/** Una línea de la compra. Los campos son texto mientras se editan. */
 interface ItemCompra {
-  key: string;
+  uid: number;
   producto: Producto;
-  cantidad: number;
-  costo: number;
+  cantidad: string;
+  costo: string;
   vencimiento: string; // yyyy-mm-dd o ""
 }
 
-const fecha = new Intl.DateTimeFormat("es-BO", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" });
+let siguienteUid = 1;
+
+/** Error de una línea, o null si se puede registrar. */
+function errorLinea(i: ItemCompra): string | null {
+  if (i.cantidad === "") return "Falta la cantidad";
+  const err = errorCantidad(Number(i.cantidad), i.producto.unidadMedida);
+  if (err) return err;
+  if (i.costo === "" || Number(i.costo) < 0) return "Falta el costo";
+  return null;
+}
 
 /** Registro de compra a un proveedor: suma stock, fija el costo y crea lotes. */
-export function Compra() {
+export function Compra({ proveedorInicial }: { proveedorInicial?: string }) {
   const router = useRouter();
   const productosQ = useProductos();
   const proveedoresQ = useProveedores();
@@ -51,88 +46,79 @@ export function Compra() {
   const proveedores = (proveedoresQ.data ?? []).filter((p) => p.activo);
   const categorias = (categoriasQ.data ?? []).filter((c) => c.activa);
   const errorCarga = productosQ.error ?? proveedoresQ.error ?? categoriasQ.error;
-  const { enviando, error: errorEnvio, ejecutar } = useEnvio();
-  // Proveedor de la compra: se fija al agregar el primer producto.
-  const [proveedorCompra, setProveedorCompra] = useState<number | null>(null);
-  const [proveedorId, setProveedorId] = useState("");
+  const { enviando, error: errorEnvio, setError: setErrorEnvio, ejecutar } = useEnvio();
+
+  // El proveedor elegido es el de la compra y además filtra los productos.
+  const [proveedorId, setProveedorId] = useState(proveedorInicial ?? "");
   const [categoriaId, setCategoriaId] = useState("");
-  const [productoId, setProductoId] = useState("");
-  const [vencimiento, setVencimiento] = useState("");
-  const [cantidad, setCantidad] = useState("1");
-  const [costo, setCosto] = useState("");
+  const [busqueda, setBusqueda] = useState("");
+  const [verTodos, setVerTodos] = useState(false);
   const [items, setItems] = useState<ItemCompra[]>([]);
   const [aviso, setAviso] = useState<string | null>(null);
 
-  const proveedorFijo = items.length > 0 ? proveedorCompra : null;
-  const proveedorFiltro = proveedorFijo ?? (proveedorId ? Number(proveedorId) : null);
+  const proveedor = proveedorId ? Number(proveedorId) : null;
 
-  const opcionesProducto = useMemo(
-    () =>
-      productos.filter(
-        (p) =>
-          (!proveedorFiltro || p.proveedorId === proveedorFiltro) &&
-          (!categoriaId || p.categoriaId === Number(categoriaId)),
-      ),
-    [productos, proveedorFiltro, categoriaId],
-  );
+  const visibles = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    return productos.filter(
+      (p) =>
+        (!proveedor || verTodos || p.proveedorId === proveedor || p.proveedorId === null) &&
+        (!categoriaId || p.categoriaId === Number(categoriaId)) &&
+        (!q || p.nombre.toLowerCase().includes(q) || p.codigoBarras.includes(q)),
+    );
+  }, [productos, proveedor, verTodos, categoriaId, busqueda]);
 
-  const producto = productos.find((p) => p.id === Number(productoId));
-  const total = items.reduce((s, i) => s + importe(i.cantidad, i.costo), 0);
+  const enLista = (p: Producto) =>
+    items.filter((i) => i.producto.id === p.id).reduce((s, i) => sumarCantidad(s, Number(i.cantidad) || 0), 0);
 
-  const elegirProducto = (p: Producto) => {
-    if (!proveedorFijo && p.proveedorId) setProveedorId(String(p.proveedorId));
-    setCategoriaId(String(p.categoriaId));
-    setProductoId(String(p.id));
-    setCosto(p.costo.toFixed(2));
+  const total =
+    Math.round(items.reduce((s, i) => s + importe(Number(i.cantidad) || 0, Number(i.costo) || 0), 0) * 100) / 100;
+  const errores = items.map(errorLinea);
+  const hayErrores = errores.some(Boolean);
+
+  /** Suma 1 (pieza o kg) a la primera línea del producto, o crea una línea nueva. */
+  const agregar = (p: Producto): string | null => {
     setAviso(null);
-  };
-
-  const onCodigo = (codigo: string) => {
-    const p = productos.find((x) => x.codigoBarras === codigo);
-    if (!p) return `No hay un producto activo con el código ${codigo}.`;
-    if (proveedorFijo && p.proveedorId && p.proveedorId !== proveedorFijo)
-      return `${p.nombre} es de ${nombreDe(proveedores, p.proveedorId)}; esta compra es de ${nombreDe(proveedores, proveedorFijo)}.`;
-    elegirProducto(p);
+    setErrorEnvio(null);
+    // Sin proveedor elegido, se toma el del primer producto.
+    if (!proveedor && p.proveedorId) setProveedorId(String(p.proveedorId));
+    setItems((prev) => {
+      const existente = prev.find((i) => i.producto.id === p.id);
+      if (existente)
+        return prev.map((i) =>
+          i.uid === existente.uid ? { ...i, cantidad: String(sumarCantidad(Number(i.cantidad) || 0, 1)) } : i,
+        );
+      return [
+        ...prev,
+        { uid: siguienteUid++, producto: p, cantidad: "1", costo: p.costo ? p.costo.toFixed(2) : "", vencimiento: "" },
+      ];
+    });
     return null;
   };
 
-  const kg = producto?.unidadMedida === "kg";
-  const cant = Number(cantidad);
-  const cost = Number(costo);
-  // Por unidad, entera; por kg, hasta 3 decimales (lo mismo exige la BD).
-  const errorCant = producto && cantidad !== "" ? errorCantidad(cant, producto.unidadMedida) : null;
-  // Proveedor al que se le compra: el elegido o, si no, el del producto.
-  const proveedorParaAgregar = proveedorFijo ?? (Number(proveedorId) || producto?.proveedorId || null);
-  const puedeAgregar =
-    !!producto && !!proveedorParaAgregar && cantidad !== "" && !errorCant && cost >= 0 && costo !== "";
-
-  const agregar = () => {
-    if (!producto || !puedeAgregar) return;
-    if (!proveedorFijo) setProveedorCompra(proveedorParaAgregar);
+  /** Otra línea del mismo producto con otra fecha de vencimiento (se crea otro lote). */
+  const otroLote = (i: ItemCompra) =>
     setItems((prev) => {
-      const key = `${producto.id}-${vencimiento}`;
-      const existente = prev.find((i) => i.key === key);
-      if (existente)
-        return prev.map((i) =>
-          i.key === key ? { ...i, cantidad: sumarCantidad(i.cantidad, cant), costo: cost } : i,
-        );
-      return [...prev, { key, producto, cantidad: cant, costo: cost, vencimiento }];
+      const pos = prev.findIndex((x) => x.uid === i.uid);
+      const nueva = { ...i, uid: siguienteUid++, cantidad: "1", vencimiento: "" };
+      return [...prev.slice(0, pos + 1), nueva, ...prev.slice(pos + 1)];
     });
-    setProductoId("");
-    setCantidad("1");
-    setCosto("");
-    setVencimiento("");
+
+  const editar = (uid: number, cambios: Partial<ItemCompra>) =>
+    setItems((prev) => prev.map((i) => (i.uid === uid ? { ...i, ...cambios } : i)));
+
+  const onCodigo = (codigo: string) => {
+    const p = productos.find((x) => x.codigoBarras === codigo);
+    if (!p) return `No hay un producto activo con el código ${codigo}. Créalo en el panel → Productos.`;
+    return agregar(p);
   };
 
   const limpiar = () => {
     setItems([]);
-    setProveedorCompra(null);
-    setProductoId("");
-    setCategoriaId("");
     setProveedorId("");
-    setCantidad("1");
-    setCosto("");
-    setVencimiento("");
+    setCategoriaId("");
+    setBusqueda("");
+    setVerTodos(false);
   };
 
   const cancelar = () => {
@@ -143,25 +129,25 @@ export function Compra() {
 
   const confirmar = () =>
     void ejecutar(async () => {
-      if (!proveedorFijo) return;
+      if (!proveedor) throw new Error("Elige el proveedor de la compra.");
       const compra = await enviar<{ id: number; total: string }>("POST", "/compras", {
-        proveedorId: proveedorFijo,
+        proveedorId: proveedor,
         detalles: items.map((i) => ({
           productoId: i.producto.id,
-          cantidad: i.cantidad,
-          costoUnit: i.costo,
+          cantidad: Number(i.cantidad),
+          costoUnit: Number(i.costo),
           ...(i.vencimiento && { fechaVencimiento: i.vencimiento }),
         })),
       });
       setAviso(
-        `Compra #${compra.id} a ${nombreDe(proveedores, proveedorFijo)} registrada: ${items.length} producto(s) por ${bs.format(Number(compra.total))}. El stock ya está actualizado.`,
+        `Compra #${compra.id} a ${nombreDe(proveedores, proveedor)} registrada: ${items.length} línea(s) por ${bs.format(Number(compra.total))}. El stock ya está actualizado.`,
       );
       limpiar();
     });
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-8">
-      <AppHeader titulo="Compra" subtitulo="Ingreso de mercadería de un proveedor" />
+      <AppHeader titulo="Compra" subtitulo="Escanea o elige los productos que llegaron del proveedor" />
       <EstadoCarga cargando={productosQ.cargando} error={errorCarga} />
 
       {aviso && (
@@ -171,42 +157,26 @@ export function Compra() {
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        {/* Columna izquierda: formulario */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        {/* Columna izquierda: filtros y productos */}
         <Card>
-          <CardHeader>
-            <CardTitle>Agregar producto</CardTitle>
-            <CardDescription>Elige el producto o escanea su código.</CardDescription>
-          </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <Campo label="Proveedor" htmlFor="c-proveedor">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Select
-                id="c-proveedor"
-                value={proveedorFijo ? String(proveedorFijo) : proveedorId}
-                disabled={!!proveedorFijo}
-                onChange={(e) => {
-                  setProveedorId(e.target.value);
-                  setProductoId("");
-                }}
+                aria-label="Proveedor de la compra"
+                value={proveedorId}
+                disabled={items.length > 0 && !!proveedor}
+                title={items.length > 0 ? "Vacía la lista para cambiar de proveedor" : undefined}
+                onChange={(e) => setProveedorId(e.target.value)}
               >
-                <option value="">Todos los proveedores</option>
+                <option value="">Elige el proveedor…</option>
                 {proveedores.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.nombre}
                   </option>
                 ))}
               </Select>
-            </Campo>
-
-            <Campo label="Categoría" htmlFor="c-categoria">
-              <Select
-                id="c-categoria"
-                value={categoriaId}
-                onChange={(e) => {
-                  setCategoriaId(e.target.value);
-                  setProductoId("");
-                }}
-              >
+              <Select aria-label="Categoría" value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
                 <option value="">Todas las categorías</option>
                 {categorias.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -214,176 +184,170 @@ export function Compra() {
                   </option>
                 ))}
               </Select>
-            </Campo>
-
-            <Campo label="Producto" htmlFor="c-producto">
-              <Select
-                id="c-producto"
-                value={productoId}
-                onChange={(e) => {
-                  const p = productos.find((x) => x.id === Number(e.target.value));
-                  if (p) elegirProducto(p);
-                  else setProductoId("");
-                }}
-              >
-                <option value="">Selecciona un producto…</option>
-                {opcionesProducto.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
-                  </option>
-                ))}
-              </Select>
-            </Campo>
-
-            <Campo label="Código manual">
-              <CodigoInput onCodigo={onCodigo} />
-            </Campo>
-
-            <div className="grid grid-cols-3 gap-3">
-              <Campo label="Vence" htmlFor="c-vence">
-                <Input
-                  id="c-vence"
-                  type="date"
-                  value={vencimiento}
-                  onChange={(e) => setVencimiento(e.target.value)}
-                />
-              </Campo>
-              <Campo label={kg ? "Cantidad (kg)" : "Cantidad"} htmlFor="c-cantidad">
-                <Input
-                  id="c-cantidad"
-                  type="number"
-                  {...pasoCantidad(producto?.unidadMedida)}
-                  value={cantidad}
-                  aria-invalid={!!errorCant}
-                  onChange={(e) => setCantidad(e.target.value)}
-                  className="tabular-nums"
-                />
-              </Campo>
-              <Campo label={kg ? "Costo por kg (Bs)" : "Costo unit. (Bs)"} htmlFor="c-costo">
-                <Input
-                  id="c-costo"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={costo}
-                  onChange={(e) => setCosto(e.target.value)}
-                  className="tabular-nums"
-                />
-              </Campo>
             </div>
-            {errorCant && <p className="text-destructive -mt-2 text-xs">{errorCant}</p>}
-            {producto && !proveedorParaAgregar && (
-              <p className="text-destructive -mt-2 text-xs">Elige el proveedor al que le compras.</p>
+
+            <CodigoInput onCodigo={onCodigo} />
+
+            <div className="relative">
+              <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+              <Input
+                className="pl-9"
+                placeholder="Buscar por nombre o código…"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                aria-label="Buscar producto"
+              />
+            </div>
+
+            {proveedor && (
+              <label className="text-muted-foreground flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="accent-primary size-4"
+                  checked={verTodos}
+                  onChange={(e) => setVerTodos(e.target.checked)}
+                />
+                Mostrar también productos de otros proveedores
+              </label>
             )}
 
-            <Button onClick={agregar} disabled={!puedeAgregar}>
-              <Plus /> Agregar a la lista
-            </Button>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {visibles.map((p) => (
+                <TarjetaProducto
+                  key={p.id}
+                  producto={p}
+                  categoria={nombreDe(categorias, p.categoriaId)}
+                  enLista={enLista(p)}
+                  modo="compra"
+                  onClick={() => agregar(p)}
+                />
+              ))}
+              {visibles.length === 0 && !productosQ.cargando && (
+                <p className="text-muted-foreground col-span-full py-10 text-center text-sm">
+                  No hay productos con esos filtros.
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
 
-        {/* Columna derecha: lista */}
-        <Card className="min-h-96">
+        {/* Columna derecha: lista de la compra */}
+        <Card className="lg:sticky lg:top-6 lg:self-start">
           <CardHeader>
             <CardTitle>Lista de productos</CardTitle>
             <CardDescription>
-              {proveedorFijo ? `Proveedor: ${nombreDe(proveedores, proveedorFijo)}` : "Aún no agregaste productos"}
+              {proveedor ? `Proveedor: ${nombreDe(proveedores, proveedor)}` : "Elige el proveedor y agrega productos"}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-1 flex-col">
+          <CardContent className="flex flex-col gap-1">
             {items.length === 0 ? (
-              <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-2 py-10 text-sm">
+              <div className="text-muted-foreground flex flex-col items-center gap-2 py-10 text-center text-sm">
                 <PackageOpen className="size-8" aria-hidden />
-                Los productos que agregues aparecerán aquí.
+                Toca un producto o escanea su código para agregarlo.
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Producto</TableHead>
-                    <TableHead>Vence</TableHead>
-                    <TableHead className="text-right">Cant.</TableHead>
-                    <TableHead className="text-right">Costo</TableHead>
-                    <TableHead className="text-right">Subtotal</TableHead>
-                    <TableHead className="w-10" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((i) => (
-                    <TableRow key={i.key}>
-                      <TableCell>
-                        <div className="font-medium">{i.producto.nombre}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {nombreDe(categorias, i.producto.categoriaId)}
+              <ul className="divide-y">
+                {items.map((i, n) => {
+                  const p = i.producto;
+                  const kg = p.unidadMedida === "kg";
+                  return (
+                    <li key={i.uid} className="flex flex-col gap-2 py-3">
+                      <div className="flex items-center gap-3">
+                        <ImagenProducto producto={p} className="size-10" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{p.nombre}</p>
+                          <p className="text-muted-foreground text-xs">{nombreDe(categorias, p.categoriaId)}</p>
                         </div>
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {i.vencimiento ? fecha.format(new Date(i.vencimiento)) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatCantidad(i.cantidad, i.producto.unidadMedida)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {bs.format(i.costo)}
-                        <span className="text-muted-foreground text-xs">{sufijoPrecio(i.producto.unidadMedida)}</span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {bs.format(importe(i.cantidad, i.costo))}
-                      </TableCell>
-                      <TableCell>
+                        <span className="text-right text-sm font-medium tabular-nums">
+                          {bs.format(importe(Number(i.cantidad) || 0, Number(i.costo) || 0))}
+                        </span>
                         <Button
                           variant="ghost"
                           size="icon"
-                          aria-label={`Quitar ${i.producto.nombre}`}
-                          onClick={() => setItems((prev) => prev.filter((x) => x.key !== i.key))}
+                          className="size-7"
+                          aria-label={`Quitar ${p.nombre}`}
+                          onClick={() => setItems((prev) => prev.filter((x) => x.uid !== i.uid))}
                         >
                           <Trash2 />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </div>
+                      <div className="grid grid-cols-[1fr_1fr_1.3fr_auto] items-end gap-2">
+                        <label className="flex flex-col gap-1">
+                          <span className="text-muted-foreground text-xs">{kg ? "Cantidad (kg)" : "Cantidad"}</span>
+                          <Input
+                            type="number"
+                            {...pasoCantidad(p.unidadMedida)}
+                            className="h-8 tabular-nums"
+                            value={i.cantidad}
+                            aria-invalid={!!errores[n] && errores[n] !== "Falta el costo"}
+                            onChange={(e) => editar(i.uid, { cantidad: e.target.value })}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-muted-foreground text-xs">{kg ? "Costo / kg" : "Costo unit."}</span>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            inputMode="decimal"
+                            className="h-8 tabular-nums"
+                            value={i.costo}
+                            aria-invalid={errores[n] === "Falta el costo"}
+                            onChange={(e) => editar(i.uid, { costo: e.target.value })}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-muted-foreground text-xs">Vence</span>
+                          <Input
+                            type="date"
+                            className="h-8"
+                            value={i.vencimiento}
+                            onChange={(e) => editar(i.uid, { vencimiento: e.target.value })}
+                          />
+                        </label>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          title="Agregar otro lote con otra fecha de vencimiento"
+                          aria-label={`Otro lote de ${p.nombre}`}
+                          onClick={() => otroLote(i)}
+                        >
+                          <CalendarPlus />
+                        </Button>
+                      </div>
+                      {errores[n] && <p className="text-destructive text-xs">{errores[n]}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </CardContent>
-          {errorEnvio && (
-            <div className="px-6">
-              <ErrorEnvio>{errorEnvio}</ErrorEnvio>
+
+          <div className="flex flex-col gap-4 border-t px-6 pt-6">
+            <div className="flex items-baseline justify-between">
+              <span className="text-muted-foreground text-sm">Total de la compra</span>
+              <span className="text-3xl font-semibold tabular-nums">{bs.format(total)}</span>
             </div>
-          )}
-          <div className="mt-auto flex flex-wrap items-center justify-between gap-4 border-t px-6 pt-6">
-            <div>
-              <p className="text-muted-foreground text-sm">Total de la compra</p>
-              <p className="text-2xl font-semibold tabular-nums">{bs.format(total)}</p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={cancelar}>
+            <ErrorEnvio>{errorEnvio}</ErrorEnvio>
+            {items.length > 0 && !proveedor && (
+              <p className="text-sm text-amber-600">Elige el proveedor de la compra.</p>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" size="lg" onClick={cancelar}>
                 Cancelar
               </Button>
-              <Button onClick={confirmar} disabled={items.length === 0 || enviando}>
+              <Button
+                size="lg"
+                onClick={confirmar}
+                disabled={items.length === 0 || !proveedor || hayErrores || enviando}
+              >
                 {enviando ? "Registrando…" : "Confirmar"}
               </Button>
             </div>
           </div>
         </Card>
       </div>
-    </div>
-  );
-}
-
-function Campo({
-  label,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  htmlFor?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
     </div>
   );
 }

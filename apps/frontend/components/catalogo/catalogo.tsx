@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Megaphone, Search, Package } from "lucide-react";
+import { ArrowLeft, Megaphone, Search } from "lucide-react";
 import { api, bs, urlApi, type Anuncio, type ProductoCatalogo, type Tienda } from "@/lib/api";
 import { sufijoPrecio } from "@/lib/cantidad";
 import { useLiveData } from "@/hooks/use-live-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ImagenProducto } from "@/components/productos/tarjeta-producto";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
@@ -104,15 +105,11 @@ export function Catalogo() {
         {productos.map((p) => {
           const d = DISPONIBILIDAD[p.disponibilidad];
           return (
-            <Card key={p.id} className="gap-3 overflow-hidden pt-0 pb-4">
-              <div className="bg-muted text-muted-foreground flex aspect-[4/3] items-center justify-center">
-                {p.fotoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- imagen servida por la API
-                  <img src={urlApi(p.fotoUrl)!} alt={p.nombre} loading="lazy" className="size-full object-cover" />
-                ) : (
-                  <Package className="size-8" aria-hidden />
-                )}
-              </div>
+            <Card key={p.id} className="min-w-0 gap-3 overflow-hidden pt-0 pb-4">
+              <ImagenProducto
+                producto={{ nombre: p.nombre, fotoUrl: urlApi(p.fotoUrl) }}
+                className="h-44 w-full rounded-none"
+              />
               <CardContent className="flex flex-col gap-2 px-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>

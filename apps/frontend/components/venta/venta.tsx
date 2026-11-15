@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Banknote, CheckCircle2, Minus, Plus, Scale, Search, ShoppingCart, Smartphone, Trash2 } from "lucide-react";
+import { Banknote, CheckCircle2, Minus, Plus, Scale, Search, ShoppingCart, Smartphone, Tag, Trash2 } from "lucide-react";
 import { bs, enviar, type MetodoPago } from "@/lib/api";
-import { errorCantidad, formatCantidad, importe, pasoCantidad, sufijoPrecio } from "@/lib/cantidad";
+import { errorCantidad, formatCantidad, importeVenta, pasoCantidad } from "@/lib/cantidad";
 import { nombreDe, type Producto } from "@/lib/modelos";
+import { cn } from "@/lib/utils";
 import { useCaja, useCategorias, useProductos, useProveedores } from "@/hooks/use-datos";
 import { AppHeader } from "@/components/nav/app-header";
 import { CodigoInput } from "@/components/scanner/codigo-input";
 import { Campo, ErrorEnvio, EstadoCarga, useEnvio } from "@/components/admin/comun";
+import { ImagenProducto, TarjetaProducto } from "@/components/productos/tarjeta-producto";
 import { BarraCaja } from "./caja";
-import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +47,9 @@ export function Venta() {
   const [items, setItems] = useState<ItemVenta[]>([]);
   const [metodo, setMetodo] = useState<MetodoPago>("efectivo");
   const [recibido, setRecibido] = useState("");
+  // Descuento manual sobre el total: en Bs o en %.
+  const [descuento, setDescuento] = useState("");
+  const [tipoDescuento, setTipoDescuento] = useState<"bs" | "pct">("bs");
   const [aviso, setAviso] = useState<string | null>(null);
 
   const visibles = useMemo(() => {
@@ -61,7 +65,20 @@ export function Venta() {
   // Producto por kg cuyo peso se está ingresando.
   const [pesando, setPesando] = useState<Producto | null>(null);
 
-  const total = items.reduce((s, i) => s + importe(i.cantidad, i.producto.precio), 0);
+  // Cada línea se redondea al centavo, igual que el backend.
+  const subtotal = Math.round(items.reduce((s, i) => s + importeVenta(i.cantidad, i.producto.precio, i.producto.unidadMedida), 0) * 100) / 100;
+  const valorDescuento = Number(descuento) || 0;
+  const montoDescuento =
+    Math.round((tipoDescuento === "pct" ? (subtotal * valorDescuento) / 100 : valorDescuento) * 100) / 100;
+  const errorDescuento =
+    valorDescuento < 0
+      ? "El descuento no puede ser negativo."
+      : tipoDescuento === "pct" && valorDescuento > 100
+        ? "El descuento no puede superar el 100 %."
+        : montoDescuento > subtotal
+          ? "El descuento supera el subtotal."
+          : null;
+  const total = Math.round((subtotal - (errorDescuento ? 0 : montoDescuento)) * 100) / 100;
   const cambio = Number(recibido) - total;
   const enCarrito = (p: Producto) => items.find((i) => i.producto.id === p.id)?.cantidad ?? 0;
 
@@ -100,6 +117,8 @@ export function Venta() {
   const limpiar = () => {
     setItems([]);
     setRecibido("");
+    setDescuento("");
+    setTipoDescuento("bs");
     setMetodo("efectivo");
   };
 
@@ -114,11 +133,13 @@ export function Venta() {
       // El backend vuelve a validar stock, unidad (enteros) y que la caja esté abierta.
       const venta = await enviar<{ id: number; total: string }>("POST", "/ventas", {
         metodoPago: metodo,
+        descuento: montoDescuento,
         items: items.map((i) => ({ productoId: i.producto.id, cantidad: i.cantidad })),
       });
       const vuelto = metodo === "efectivo" && recibido ? ` · cambio ${bs.format(cambio)}` : "";
+      const conDescuento = montoDescuento > 0 ? ` (descuento ${bs.format(montoDescuento)})` : "";
       setAviso(
-        `Venta #${venta.id} registrada: ${bs.format(Number(venta.total))} en ${metodo === "efectivo" ? "efectivo" : "transferencia/QR"}${vuelto}.`,
+        `Venta #${venta.id} registrada: ${bs.format(Number(venta.total))}${conDescuento} en ${metodo === "efectivo" ? "efectivo" : "transferencia/QR"}${vuelto}.`,
       );
       limpiar();
     });
@@ -183,40 +204,18 @@ export function Venta() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {visibles.map((p) => {
                 const cantidad = enCarrito(p);
-                const kg = p.unidadMedida === "kg";
-                const agotado = p.stock <= 0;
                 // Por kg se puede volver a tocar para corregir el peso.
-                const sinMas = kg ? agotado : cantidad >= p.stock;
+                const sinMas = p.unidadMedida === "kg" ? p.stock <= 0 : cantidad >= p.stock;
                 return (
-                  <button
+                  <TarjetaProducto
                     key={p.id}
-                    type="button"
+                    producto={p}
+                    categoria={nombreDe(categorias, p.categoriaId)}
+                    enLista={cantidad}
+                    modo="venta"
                     disabled={sinMas}
                     onClick={() => agregar(p)}
-                    className="bg-card hover:bg-accent focus-visible:ring-ring/50 relative flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {cantidad > 0 && (
-                      <Badge className="absolute top-2 right-2 tabular-nums">
-                        {formatCantidad(cantidad, p.unidadMedida)}
-                      </Badge>
-                    )}
-                    <span className="pr-6 text-sm leading-tight font-medium">{p.nombre}</span>
-                    <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                      {kg && <Scale className="size-3" aria-label="Se vende por peso" />}
-                      {nombreDe(categorias, p.categoriaId)}
-                    </span>
-                    <span className="mt-1 flex w-full items-end justify-between gap-2">
-                      <span className="font-semibold tabular-nums">
-                        {bs.format(p.precio)}
-                        <span className="text-muted-foreground text-xs font-normal">{sufijoPrecio(p.unidadMedida)}</span>
-                      </span>
-                      <span
-                        className={`text-xs tabular-nums ${agotado ? "text-destructive" : p.stock <= p.stockMinimo ? "text-amber-600" : "text-muted-foreground"}`}
-                      >
-                        {agotado ? "Agotado" : `${formatCantidad(p.stock, p.unidadMedida)} disp.`}
-                      </span>
-                    </span>
-                  </button>
+                  />
                 );
               })}
               {visibles.length === 0 && (
@@ -246,6 +245,7 @@ export function Venta() {
               <ul className="divide-y">
                 {items.map(({ producto: p, cantidad }) => (
                   <li key={p.id} className="flex items-center gap-3 py-2">
+                    <ImagenProducto producto={p} className="size-10" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{p.nombre}</p>
                       <p className="text-muted-foreground text-xs tabular-nums">
@@ -300,7 +300,7 @@ export function Venta() {
                       </div>
                     )}
                     <span className="w-20 text-right text-sm font-medium tabular-nums">
-                      {bs.format(importe(cantidad, p.precio))}
+                      {bs.format(importeVenta(cantidad, p.precio, p.unidadMedida))}
                     </span>
                   </li>
                 ))}
@@ -309,9 +309,61 @@ export function Venta() {
           </CardContent>
 
           <div className="flex flex-col gap-4 border-t px-6 pt-6">
-            <div className="flex items-baseline justify-between">
-              <span className="text-muted-foreground text-sm">Total</span>
-              <span className="text-3xl font-semibold tabular-nums">{bs.format(total)}</span>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="tabular-nums">{bs.format(subtotal)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="v-descuento" className="text-muted-foreground flex items-center gap-1.5 text-sm">
+                  <Tag className="size-3.5" /> Descuento
+                </label>
+                <div className="flex items-center gap-1">
+                  <Input
+                    id="v-descuento"
+                    type="number"
+                    min={0}
+                    step={tipoDescuento === "pct" ? 1 : 0.5}
+                    max={tipoDescuento === "pct" ? 100 : undefined}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="h-8 w-24 text-right tabular-nums"
+                    aria-invalid={!!errorDescuento}
+                    value={descuento}
+                    onChange={(e) => setDescuento(e.target.value)}
+                  />
+                  <div className="flex rounded-md border p-0.5" role="radiogroup" aria-label="Tipo de descuento">
+                    {(["bs", "pct"] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        role="radio"
+                        aria-checked={tipoDescuento === t}
+                        onClick={() => setTipoDescuento(t)}
+                        className={cn(
+                          "rounded px-2 py-0.5 text-xs font-medium",
+                          tipoDescuento === t
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {t === "bs" ? "Bs" : "%"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {errorDescuento ? (
+                <p className="text-destructive text-right text-xs">{errorDescuento}</p>
+              ) : (
+                montoDescuento > 0 && (
+                  <p className="text-right text-xs text-emerald-600 tabular-nums">− {bs.format(montoDescuento)}</p>
+                )
+              )}
+              <div className="flex items-baseline justify-between border-t pt-2">
+                <span className="text-muted-foreground text-sm">Total</span>
+                <span className="text-3xl font-semibold tabular-nums">{bs.format(total)}</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Método de pago">
@@ -366,7 +418,11 @@ export function Venta() {
                 size="lg"
                 onClick={confirmar}
                 disabled={
-                  items.length === 0 || !caja || enviando || (metodo === "efectivo" && !!recibido && cambio < 0)
+                  items.length === 0 ||
+                  !caja ||
+                  enviando ||
+                  !!errorDescuento ||
+                  (metodo === "efectivo" && !!recibido && cambio < 0)
                 }
               >
                 {enviando ? "Cobrando…" : "Confirmar"}
@@ -413,7 +469,7 @@ function FormPeso({
   onConfirmar: (kg: number) => string | null;
 }) {
   const [kg, setKg] = useState(inicial ? String(inicial) : "");
-  const [monto, setMonto] = useState(inicial ? importe(inicial, producto.precio).toFixed(2) : "");
+  const [monto, setMonto] = useState(inicial ? importeVenta(inicial, producto.precio, "kg").toFixed(2) : "");
   const [error, setError] = useState<string | null>(null);
 
   const cantidad = Number(kg);
@@ -421,7 +477,7 @@ function FormPeso({
 
   const desdeKg = (v: string) => {
     setKg(v);
-    setMonto(v === "" ? "" : importe(Number(v), producto.precio).toFixed(2));
+    setMonto(v === "" ? "" : importeVenta(Number(v), producto.precio, "kg").toFixed(2));
     setError(null);
   };
   const desdeMonto = (v: string) => {
@@ -470,7 +526,7 @@ function FormPeso({
             id="peso-bs"
             type="number"
             min={0}
-            step="0.5"
+            step="any"
             inputMode="decimal"
             className="tabular-nums"
             value={monto}
@@ -481,7 +537,7 @@ function FormPeso({
       {error && <p className="text-destructive text-sm">{error}</p>}
       <Button type="submit" size="lg" disabled={!valido}>
         {valido
-          ? `Agregar ${formatCantidad(cantidad, "kg")} · ${bs.format(importe(cantidad, producto.precio))}`
+          ? `Agregar ${formatCantidad(cantidad, "kg")} · ${bs.format(importeVenta(cantidad, producto.precio, "kg"))}`
           : "Ingresa el peso"}
       </Button>
     </form>

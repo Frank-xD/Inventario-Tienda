@@ -37,13 +37,24 @@ import {
   useEnvio,
 } from "./comun";
 
-export function Productos() {
+export function Productos({ productoInicial = null }: { productoInicial?: number | null }) {
   const { productos, categorias, proveedores, cargando, error, guardarProducto } = useAdmin();
   const [q, setQ] = useState("");
   const [categoriaId, setCategoriaId] = useState("");
   const [proveedorId, setProveedorId] = useState("");
   const [estado, setEstado] = useState<FiltroEstado>("activos");
   const [editando, setEditando] = useState<Producto | "nuevo" | null>(null);
+
+  // ?producto=ID (desde un aviso): abre ese producto en cuanto cargan los datos.
+  const [pendiente, setPendiente] = useState(productoInicial);
+  if (pendiente !== null && productos.length > 0) {
+    const p = productos.find((x) => x.id === pendiente);
+    setPendiente(null);
+    if (p) {
+      setEstado("todos");
+      setEditando(p);
+    }
+  }
 
   const texto = q.trim().toLowerCase();
   const visibles = productos.filter(

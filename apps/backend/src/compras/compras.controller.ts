@@ -35,11 +35,16 @@ const filtros = z.object({
   proveedorId: id.optional(),
   desde: fecha.optional(),
   hasta: fecha.optional(),
+  limite: z.coerce.number().int().min(1).max(500).default(100),
 });
 
 const include = {
   proveedor: { select: { id: true, nombre: true } },
-  detalles: { include: { producto: { select: { id: true, nombre: true } } } },
+  detalles: {
+    include: {
+      producto: { select: { id: true, nombre: true, unidadMedida: true } },
+    },
+  },
 } as const;
 
 @Controller('compras')
@@ -60,7 +65,8 @@ export class ComprasController {
         },
       },
       orderBy: { fecha: 'desc' },
-      include: { proveedor: { select: { id: true, nombre: true } } },
+      take: f.limite,
+      include,
     });
   }
 

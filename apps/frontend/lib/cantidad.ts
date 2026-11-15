@@ -33,3 +33,11 @@ export const sumarCantidad = (a: number, b: number) => Math.round((a + b) * 1000
 
 /** Importe de una línea redondeado al centavo, igual que la API. */
 export const importe = (cantidad: number, precio: number) => Math.round(cantidad * precio * 100) / 100;
+
+/**
+ * Importe de una línea de VENTA. Por kg se redondea al medio boliviano más
+ * cercano (10,35 → 10,50; 10,85 → 11,00; 12,20 → 12,00), igual que la API.
+ * Por unidad queda al centavo.
+ */
+export const importeVenta = (cantidad: number, precio: number, unidad: UnidadMedida = "unidad") =>
+  unidad === "kg" ? Math.round(importe(cantidad, precio) * 2) / 2 : importe(cantidad, precio);
