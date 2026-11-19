@@ -181,10 +181,13 @@ function Sidebar({ colapsado, onNavegar }: { colapsado: boolean; onNavegar?: () 
 
 /** Campana de la esquina superior derecha con los avisos sin leer. */
 function Notificaciones() {
-  const { avisos, noLeidos, marcarLeido, marcarTodosLeidos } = useAdmin();
+  // Mismo nombre que antes para no tocar el resto: aquí noLeidos es lo que cuenta la campana.
+  const { avisos, noLeidosCampana: noLeidos, infoEnCampana, marcarLeido, marcarTodosLeidos } = useAdmin();
   const [abierto, setAbierto] = useState(false);
   const [detalle, setDetalle] = useState<Aviso | null>(null);
-  const recientes = avisos.filter((a) => !a.leido && !a.resuelto).slice(0, 5);
+  const recientes = avisos
+    .filter((a) => !a.leido && !a.resuelto && (infoEnCampana || a.tipo !== "info"))
+    .slice(0, 5);
 
   const ver = (a: Aviso) => {
     setAbierto(false);

@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -13,8 +14,11 @@ import { idParam, texto, textoOpcional } from '../common/schemas.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Eventos, RealtimeGateway } from '../realtime/realtime.gateway.js';
 
+/** Nombre sin espacios sobrantes: "  Pil   Andina " → "Pil Andina". */
+const nombreProveedor = texto.transform((s) => s.replace(/\s+/g, ' '));
+
 const crearProveedor = z.object({
-  nombre: texto,
+  nombre: nombreProveedor,
   telefono: textoOpcional,
   notas: textoOpcional,
   activo: z.boolean().optional(),
@@ -28,6 +32,26 @@ export class ProveedoresController {
     private readonly realtime: RealtimeGateway,
     private readonly avisos: AvisosService,
   ) {}
+
+  /**
+   * Impide dos proveedores con el mismo nombre (sin distinguir mayúsculas).
+   * La BD lo garantiza también con uq_proveedores_nombre; esto da un mensaje claro.
+   */
+  private async verificarNombreLibre(nombre: string, excepto?: number) {
+    const otro = await this.prisma.proveedor.findFirst({
+      where: {
+        nombre: { equals: nombre, mode: 'insensitive' },
+        ...(excepto && { id: { not: excepto } }),
+      },
+    });
+    if (otro) {
+      throw new ConflictException(
+        otro.activo
+          ? `Ya existe el proveedor "${otro.nombre}".`
+          : `Ya existe el proveedor "${otro.nombre}" (está inactivo: actívalo en vez de crear otro).`,
+      );
+    }
+  }
 
   /** Activos, o todos con ?todos=true. Incluye cuántos productos tiene cada uno. */
   @Get()
@@ -54,6 +78,7 @@ export class ProveedoresController {
   async crear(
     @Body({ schema: crearProveedor }) body: z.infer<typeof crearProveedor>,
   ) {
+    await this.verificarNombreLibre(body.nombre);
     const proveedor = await this.prisma.proveedor.create({ data: body });
     this.realtime.emit(Eventos.ProveedorActualizado, {
       proveedorId: proveedor.id,
@@ -67,6 +92,7 @@ export class ProveedoresController {
     @Param('id', { schema: idParam }) id: number,
     @Body({ schema: editarProveedor }) body: z.infer<typeof editarProveedor>,
   ) {
+    if (body.nombre) await this.verificarNombreLibre(body.nombre, id);
     const proveedor = await this.prisma.proveedor.update({
       where: { id },
       data: body,

@@ -125,6 +125,7 @@ export function Proveedores() {
           <FormProveedor
             key={editando === "nuevo" ? "nuevo" : editando.id}
             inicial={editando === "nuevo" ? null : editando}
+            existentes={proveedores}
             onGuardar={async (p) => {
               await guardarProveedor(p);
               setEditando(null);
@@ -136,11 +137,16 @@ export function Proveedores() {
   );
 }
 
+/** Igual que en la API: sin espacios sobrantes y sin distinguir mayúsculas. */
+const normalizar = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
 function FormProveedor({
   inicial,
+  existentes,
   onGuardar,
 }: {
   inicial: Proveedor | null;
+  existentes: Proveedor[];
   onGuardar: (p: DatosProveedor) => Promise<void>;
 }) {
   const { enviando, error, ejecutar } = useEnvio();
@@ -148,6 +154,9 @@ function FormProveedor({
   const [telefono, setTelefono] = useState(inicial?.telefono ?? "");
   const [notas, setNotas] = useState(inicial?.notas ?? "");
   const [activo, setActivo] = useState(inicial?.activo ?? true);
+  const repetido = nombre.trim()
+    ? existentes.find((p) => p.id !== inicial?.id && normalizar(p.nombre) === normalizar(nombre))
+    : undefined;
 
   return (
     <form
@@ -158,7 +167,20 @@ function FormProveedor({
       }}
     >
       <Campo label="Nombre" htmlFor="pv-nombre">
-        <Input id="pv-nombre" required autoFocus value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        <Input
+          id="pv-nombre"
+          required
+          autoFocus
+          aria-invalid={!!repetido}
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+        />
+        {repetido && (
+          <p className="text-destructive text-xs">
+            Ya existe el proveedor “{repetido.nombre}”
+            {repetido.activo ? "." : " (está inactivo: actívalo en vez de crear otro)."}
+          </p>
+        )}
       </Campo>
       <Campo label="Teléfono" htmlFor="pv-tel">
         <Input id="pv-tel" type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} />
@@ -178,7 +200,7 @@ function FormProveedor({
         </label>
       )}
       <ErrorEnvio>{error}</ErrorEnvio>
-      <Button type="submit" size="lg" disabled={!nombre.trim() || enviando}>
+      <Button type="submit" size="lg" disabled={!nombre.trim() || !!repetido || enviando}>
         {enviando ? "Guardando…" : "Guardar proveedor"}
       </Button>
     </form>

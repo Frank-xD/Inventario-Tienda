@@ -44,6 +44,7 @@ model Proveedor {
   compras   Compra[]
   productos Producto[]
 
+  /// Índice único uq_proveedores_nombre sobre lower(nombre) (en la migración).
   @@map("proveedores")
 }
 
@@ -345,10 +346,21 @@ model Configuracion {
   notifStock        Boolean  @default(true) @map("notif_stock")
   notifVencimientos Boolean  @default(true) @map("notif_vencimientos")
   notifProveedores  Boolean  @default(true) @map("notif_proveedores")
-  resumenSemanal    Boolean  @default(false) @map("resumen_semanal")
+  /// Avisos informativos (proveedor, categoría o producto nuevos).
+  notifInfo         Boolean  @default(true) @map("notif_info")
   actualizadoEn     DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
 
   @@map("configuracion")
+}
+
+/// Contraseña de acceso (fila única). Sin fila se usa APP_PASSWORD.
+/// CHECK: id = 1
+model Acceso {
+  id             Int      @id @default(1) @db.SmallInt
+  contrasenaHash String   @map("contrasena_hash")
+  actualizadoEn  DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+
+  @@map("acceso")
 }
 
 /// stock / vencimiento / proveedor: los abre y cierra fn_sincronizar_avisos().

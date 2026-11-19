@@ -23,7 +23,7 @@ const editarConfiguracion = z.object({
   notifStock: z.boolean().optional(),
   notifVencimientos: z.boolean().optional(),
   notifProveedores: z.boolean().optional(),
-  resumenSemanal: z.boolean().optional(),
+  notifInfo: z.boolean().optional(),
 });
 
 @Controller('configuracion')

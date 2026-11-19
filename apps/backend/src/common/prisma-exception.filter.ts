@@ -28,6 +28,11 @@ const PG: Record<string, { status: number; message: string }> = {
   },
 };
 
+/** Mensajes específicos para índices únicos conocidos. */
+const UNICOS: Record<string, string> = {
+  uq_proveedores_nombre: 'Ya existe un proveedor con ese nombre.',
+};
+
 const PRISMA: Record<string, { status: number; message: string }> = {
   P2002: PG['23505'],
   P2003: PG['23503'],
@@ -74,9 +79,10 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       });
     }
 
+    const indice = cause?.constraint?.index;
     return res.status(mapped.status).json({
       statusCode: mapped.status,
-      message: mapped.message,
+      message: (indice && UNICOS[indice]) || mapped.message,
       code: cause?.originalCode ?? error.code,
       constraint: cause?.constraint?.index,
     });

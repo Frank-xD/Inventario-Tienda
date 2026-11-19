@@ -37,7 +37,14 @@ const EV_CAJA = ["venta:registrada", "venta:anulada", "caja:actualizada"];
 const fetchProductos = () => api<ProductoApi[]>("/productos?inactivos=true");
 const fetchProveedores = () => api<ProveedorApi[]>("/proveedores?todos=true");
 const fetchCategorias = () => api<CategoriaApi[]>("/categorias?todas=true");
-const fetchAvisos = () => api<{ avisos: AvisoApi[]; noLeidos: number }>("/avisos");
+/** noLeidosCampana e infoEnCampana: lo que muestra la campana (Configuración → Información del sistema). */
+interface RespuestaAvisos {
+  avisos: AvisoApi[];
+  noLeidos: number;
+  noLeidosCampana: number;
+  infoEnCampana: boolean;
+}
+const fetchAvisos = () => api<RespuestaAvisos>("/avisos");
 const fetchConfiguracion = () => api<Configuracion>("/configuracion");
 // Envuelta: así "cargando" (data null) se distingue de "no hay caja" (caja null).
 const fetchCaja = () => api<CajaActual | null>("/cajas/actual").then((caja) => ({ caja }));
@@ -56,9 +63,11 @@ function useMapeo<A, B>(r: { data: A | null; error: string | null; recargar: () 
 const mapProductos = (xs: ProductoApi[]) => xs.map(aProducto);
 const mapProveedores = (xs: ProveedorApi[]) => xs.map(aProveedor);
 const mapCategorias = (xs: CategoriaApi[]) => xs.map(aCategoria);
-const mapAvisos = (r: { avisos: AvisoApi[]; noLeidos: number }) => ({
+const mapAvisos = (r: RespuestaAvisos) => ({
   avisos: r.avisos.map(aAviso),
   noLeidos: r.noLeidos,
+  noLeidosCampana: r.noLeidosCampana,
+  infoEnCampana: r.infoEnCampana,
 });
 const identidad = <T,>(x: T) => x;
 

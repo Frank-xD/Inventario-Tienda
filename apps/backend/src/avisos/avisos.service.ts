@@ -29,10 +29,22 @@ export class AvisosService {
     await this.prisma.$executeRaw`SELECT fn_sincronizar_avisos()`;
   }
 
+  /**
+   * ¿Van los avisos informativos a la campana? (Configuración → Información
+   * del sistema). Solo afecta a la campana: la página Avisos los muestra siempre.
+   */
+  private async infoEnCampana() {
+    const cfg = await this.prisma.configuracion.findUnique({
+      where: { id: 1 },
+      select: { notifInfo: true },
+    });
+    return cfg?.notifInfo ?? true;
+  }
+
   async listar(tipo?: TipoAviso, limite = 100) {
     await this.sincronizar();
     const desde = new Date(Date.now() - DIAS_HISTORIAL * 24 * 60 * 60 * 1000);
-    const [avisos, noLeidos] = await Promise.all([
+    const [avisos, noLeidos, infoEnCampana] = await Promise.all([
       this.prisma.aviso.findMany({
         where: {
           ...(tipo && { tipo }),
@@ -46,14 +58,22 @@ export class AvisosService {
         take: limite,
       }),
       this.contarNoLeidos(),
+      this.infoEnCampana(),
     ]);
-    return { avisos, noLeidos };
+    const noLeidosCampana = infoEnCampana
+      ? noLeidos
+      : await this.contarNoLeidos({ sinInfo: true });
+    return { avisos, noLeidos, noLeidosCampana, infoEnCampana };
   }
 
-  /** Lo que cuenta la campana: sin leer y todavía vigentes. */
-  contarNoLeidos() {
+  /** Sin leer y todavía vigentes (sinInfo: sin los informativos, para la campana). */
+  contarNoLeidos({ sinInfo = false } = {}) {
     return this.prisma.aviso.count({
-      where: { leidoEn: null, resueltoEn: null },
+      where: {
+        leidoEn: null,
+        resueltoEn: null,
+        ...(sinInfo && { tipo: { not: 'info' } }),
+      },
     });
   }
 

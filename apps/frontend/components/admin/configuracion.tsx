@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CheckCircle2, Moon, Sun } from "lucide-react";
 import { enviar, type Configuracion as Config } from "@/lib/api";
+import { guardarSesion } from "@/lib/sesion";
 import { useTema } from "@/lib/tema";
 import { cn } from "@/lib/utils";
 import { useConfiguracion } from "@/hooks/use-datos";
@@ -12,16 +13,16 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Campo, ErrorEnvio, EstadoCarga, Titulo, useEnvio } from "./comun";
 
-type IdNotif = "notifStock" | "notifVencimientos" | "notifProveedores" | "resumenSemanal";
+type IdNotif = "notifStock" | "notifVencimientos" | "notifProveedores" | "notifInfo";
 
 const NOTIFICACIONES: { id: IdNotif; label: string; desc: string }[] = [
   { id: "notifStock", label: "Alertas de stock bajo", desc: "Cuando un producto llega a su stock mínimo o se agota." },
   { id: "notifVencimientos", label: "Avisos de vencimiento", desc: "Lotes vencidos o que vencen en los próximos 7 días." },
   { id: "notifProveedores", label: "Recordatorios de pedido", desc: "Qué pedir a cada proveedor según el stock bajo." },
   {
-    id: "resumenSemanal",
-    label: "Resumen semanal por correo",
-    desc: "Se guarda la preferencia; el envío de correos todavía no está disponible.",
+    id: "notifInfo",
+    label: "Información del sistema",
+    desc: "Avisos de proveedor, categoría o producto nuevos en la campana de Home. En Avisos se ven siempre.",
   },
 ];
 
@@ -29,12 +30,103 @@ export function Configuracion() {
   const cfg = useConfiguracion();
   return (
     <>
-      <Titulo descripcion="Datos de la tienda, notificaciones y apariencia">Configuración</Titulo>
+      <Titulo descripcion="Datos de la tienda, notificaciones, contraseña y apariencia">Configuración</Titulo>
       <EstadoCarga cargando={cfg.cargando} error={cfg.error} />
       {/* key: si otro dispositivo guarda cambios, el formulario se reinicia con ellos. */}
       {cfg.data && <FormConfiguracion key={JSON.stringify(cfg.data)} inicial={cfg.data} />}
+      <CambiarContrasena />
       <Apariencia />
     </>
+  );
+}
+
+/** Cambio de la contraseña de acceso al sistema. */
+function CambiarContrasena() {
+  const { enviando, error, setError, ejecutar } = useEnvio();
+  const [actual, setActual] = useState("");
+  const [nueva, setNueva] = useState("");
+  const [repetir, setRepetir] = useState("");
+  const [listo, setListo] = useState(false);
+
+  const corta = nueva !== "" && nueva.length < 6;
+  const distinta = repetir !== "" && repetir !== nueva;
+  const valido = actual !== "" && nueva.length >= 6 && repetir === nueva;
+  const limpiarAvisos = () => {
+    setListo(false);
+    setError(null);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Contraseña de acceso</CardTitle>
+        <CardDescription>
+          La que se pide al entrar al sistema. Al cambiarla se cierra la sesión en los demás dispositivos.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="flex max-w-sm flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void ejecutar(async () => {
+              const { token } = await enviar<{ token: string }>("POST", "/auth/contrasena", { actual, nueva });
+              guardarSesion(token);
+              setActual("");
+              setNueva("");
+              setRepetir("");
+              setListo(true);
+            });
+          }}
+        >
+          <Campo label="Contraseña actual" htmlFor="pw-actual">
+            <Input
+              id="pw-actual"
+              type="password"
+              autoComplete="current-password"
+              value={actual}
+              onChange={(e) => {
+                setActual(e.target.value);
+                limpiarAvisos();
+              }}
+            />
+          </Campo>
+          <Campo label="Nueva contraseña" htmlFor="pw-nueva">
+            <Input
+              id="pw-nueva"
+              type="password"
+              autoComplete="new-password"
+              aria-invalid={corta}
+              value={nueva}
+              onChange={(e) => {
+                setNueva(e.target.value);
+                limpiarAvisos();
+              }}
+            />
+            {corta && <p className="text-destructive text-xs">Debe tener al menos 6 caracteres.</p>}
+          </Campo>
+          <Campo label="Repite la nueva contraseña" htmlFor="pw-repetir">
+            <Input
+              id="pw-repetir"
+              type="password"
+              autoComplete="new-password"
+              aria-invalid={distinta}
+              value={repetir}
+              onChange={(e) => {
+                setRepetir(e.target.value);
+                limpiarAvisos();
+              }}
+            />
+            {distinta && <p className="text-destructive text-xs">No coincide con la nueva contraseña.</p>}
+          </Campo>
+          <ErrorEnvio>{error}</ErrorEnvio>
+          {listo && <p className="text-sm text-emerald-600">Contraseña cambiada. Úsala la próxima vez que entres.</p>}
+          <Button type="submit" className="self-start" disabled={!valido || enviando}>
+            {enviando ? "Guardando…" : "Cambiar contraseña"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -47,7 +139,7 @@ function FormConfiguracion({ inicial }: { inicial: Config }) {
     notifStock: inicial.notifStock,
     notifVencimientos: inicial.notifVencimientos,
     notifProveedores: inicial.notifProveedores,
-    resumenSemanal: inicial.resumenSemanal,
+    notifInfo: inicial.notifInfo,
   });
   const [guardado, setGuardado] = useState(false);
 

@@ -47,7 +47,12 @@ interface AdminStore {
   categorias: Categoria[];
   productos: Producto[];
   avisos: Aviso[];
+  /** Sin leer en total (página Avisos y menú lateral). */
   noLeidos: number;
+  /** Sin leer que muestra la campana (sin los informativos si están apagados). */
+  noLeidosCampana: number;
+  /** ¿La campana muestra los avisos informativos? */
+  infoEnCampana: boolean;
   cargando: boolean;
   error: string | null;
   guardarProveedor: (p: DatosProveedor) => Promise<void>;
@@ -115,6 +120,8 @@ export function AdminStoreProvider({ children }: { children: React.ReactNode }) 
       productos: productos.data ?? [],
       avisos: avisos.data?.avisos ?? [],
       noLeidos: avisos.data?.noLeidos ?? 0,
+      noLeidosCampana: avisos.data?.noLeidosCampana ?? 0,
+      infoEnCampana: avisos.data?.infoEnCampana ?? true,
       cargando: proveedores.cargando || categorias.cargando || productos.cargando,
       error: proveedores.error ?? categorias.error ?? productos.error ?? avisos.error,
       guardarProveedor,

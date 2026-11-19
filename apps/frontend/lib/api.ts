@@ -134,7 +134,8 @@ export interface Configuracion {
   notifStock: boolean;
   notifVencimientos: boolean;
   notifProveedores: boolean;
-  resumenSemanal: boolean;
+  /** Avisos informativos (proveedor, categoría o producto nuevos). */
+  notifInfo: boolean;
 }
 
 export interface ProductoCatalogo {
