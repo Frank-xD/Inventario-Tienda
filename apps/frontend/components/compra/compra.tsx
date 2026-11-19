@@ -7,6 +7,7 @@ import { bs, enviar } from "@/lib/api";
 import { errorCantidad, importe, pasoCantidad, sumarCantidad } from "@/lib/cantidad";
 import { nombreDe, type Producto } from "@/lib/modelos";
 import { useCategorias, useProductos, useProveedores } from "@/hooks/use-datos";
+import { useParametroUrl } from "@/hooks/use-parametro-url";
 import { ErrorEnvio, EstadoCarga, useEnvio } from "@/components/admin/comun";
 import { AppHeader } from "@/components/nav/app-header";
 import { ImagenProducto, TarjetaProducto } from "@/components/productos/tarjeta-producto";
@@ -37,7 +38,7 @@ function errorLinea(i: ItemCompra): string | null {
 }
 
 /** Registro de compra a un proveedor: suma stock, fija el costo y crea lotes. */
-export function Compra({ proveedorInicial }: { proveedorInicial?: string }) {
+export function Compra() {
   const router = useRouter();
   const productosQ = useProductos();
   const proveedoresQ = useProveedores();
@@ -49,12 +50,20 @@ export function Compra({ proveedorInicial }: { proveedorInicial?: string }) {
   const { enviando, error: errorEnvio, setError: setErrorEnvio, ejecutar } = useEnvio();
 
   // El proveedor elegido es el de la compra y además filtra los productos.
-  const [proveedorId, setProveedorId] = useState(proveedorInicial ?? "");
+  const [proveedorId, setProveedorId] = useState("");
   const [categoriaId, setCategoriaId] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [verTodos, setVerTodos] = useState(false);
   const [items, setItems] = useState<ItemCompra[]>([]);
   const [aviso, setAviso] = useState<string | null>(null);
+
+  // ?proveedor=ID (desde el aviso "Hacer pedido") deja elegido ese proveedor una vez.
+  const proveedorUrl = useParametroUrl("proveedor");
+  const [urlAplicada, setUrlAplicada] = useState<string | null>(null);
+  if (proveedorUrl && proveedorUrl !== urlAplicada) {
+    setUrlAplicada(proveedorUrl);
+    setProveedorId(proveedorUrl);
+  }
 
   const proveedor = proveedorId ? Number(proveedorId) : null;
 

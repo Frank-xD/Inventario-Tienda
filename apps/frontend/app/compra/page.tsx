@@ -6,8 +6,6 @@ export const metadata: Metadata = {
   description: "Ingreso de mercadería de un proveedor",
 };
 
-/** ?proveedor=ID llega desde el aviso "Hacer pedido". */
-export default async function CompraPage({ searchParams }: { searchParams: Promise<{ proveedor?: string }> }) {
-  const { proveedor } = await searchParams;
-  return <Compra proveedorInicial={proveedor} />;
+export default function CompraPage() {
+  return <Compra />;
 }

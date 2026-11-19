@@ -36,8 +36,9 @@ import {
   Titulo,
   useEnvio,
 } from "./comun";
+import { useParametroUrl } from "@/hooks/use-parametro-url";
 
-export function Productos({ productoInicial = null }: { productoInicial?: number | null }) {
+export function Productos() {
   const { productos, categorias, proveedores, cargando, error, guardarProducto } = useAdmin();
   const [q, setQ] = useState("");
   const [categoriaId, setCategoriaId] = useState("");
@@ -45,11 +46,12 @@ export function Productos({ productoInicial = null }: { productoInicial?: number
   const [estado, setEstado] = useState<FiltroEstado>("activos");
   const [editando, setEditando] = useState<Producto | "nuevo" | null>(null);
 
-  // ?producto=ID (desde un aviso): abre ese producto en cuanto cargan los datos.
-  const [pendiente, setPendiente] = useState(productoInicial);
-  if (pendiente !== null && productos.length > 0) {
-    const p = productos.find((x) => x.id === pendiente);
-    setPendiente(null);
+  // ?producto=ID (desde un aviso): abre ese producto una vez, cuando cargan los datos.
+  const productoUrl = useParametroUrl("producto");
+  const [urlAplicada, setUrlAplicada] = useState<string | null>(null);
+  if (productoUrl && productoUrl !== urlAplicada && productos.length > 0) {
+    const p = productos.find((x) => x.id === Number(productoUrl));
+    setUrlAplicada(productoUrl);
     if (p) {
       setEstado("todos");
       setEditando(p);
