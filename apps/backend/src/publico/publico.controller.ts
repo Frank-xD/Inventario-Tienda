@@ -2,6 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { urlFoto } from '../catalogo/fotos.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { Publico } from '../auth/auth.guard.js';
 
 const filtros = z.object({
   q: z.string().trim().optional(),
@@ -12,6 +13,7 @@ const filtros = z.object({
  * Portal público: solo lee vistas pensadas para clientes
  * (sin cifras exactas de stock ni costos).
  */
+@Publico()
 @Controller('publico')
 export class PublicoController {
   constructor(private readonly prisma: PrismaService) {}

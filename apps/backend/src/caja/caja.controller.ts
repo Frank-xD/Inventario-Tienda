@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import {
   dinero,
+  fecha,
   idParam,
   montoPositivo,
   texto,
@@ -15,6 +16,16 @@ const abrir = z.object({
   notas: textoOpcional,
 });
 const cerrar = z.object({ montoContado: dinero, notas: textoOpcional });
+const filtrosMovimientos = z.object({
+  desde: fecha.optional(),
+  hasta: fecha.optional(),
+  limite: z.coerce.number().int().min(1).max(500).default(200),
+});
+const filtrosHistorial = z.object({
+  desde: fecha.optional(),
+  hasta: fecha.optional(),
+  limite: z.coerce.number().int().min(1).max(365).default(30),
+});
 const movimiento = z.object({
   tipo: z.enum(TIPOS_MOVIMIENTO_CAJA),
   monto: montoPositivo,
@@ -31,14 +42,19 @@ export class CajaController {
     return this.caja.actual();
   }
 
+  /** Cajas abiertas en el período (por fecha de apertura), con su resumen. */
   @Get()
-  historial(
-    @Query('limite', {
-      schema: z.coerce.number().int().min(1).max(365).default(30),
-    })
-    limite: number,
+  historial(@Query({ schema: filtrosHistorial }) f: z.infer<typeof filtrosHistorial>) {
+    return this.caja.historial(f);
+  }
+
+  /** Ingresos y egresos extra de todas las cajas, del más reciente al más antiguo. */
+  @Get('movimientos')
+  movimientos(
+    @Query({ schema: filtrosMovimientos })
+    f: z.infer<typeof filtrosMovimientos>,
   ) {
-    return this.caja.historial(limite);
+    return this.caja.listarMovimientos(f);
   }
 
   @Get(':id')

@@ -5,6 +5,7 @@ import { AnunciosModule } from './anuncios/anuncios.module.js';
 import { AvisosModule } from './avisos/avisos.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { AuthModule } from './auth/auth.module.js';
 import { CajaModule } from './caja/caja.module.js';
 import { CatalogoModule } from './catalogo/catalogo.module.js';
 import { ComprasModule } from './compras/compras.module.js';
@@ -31,6 +32,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       serviceId: 'backend',
     }),
     PrismaModule,
+    AuthModule,
     RealtimeModule,
     CatalogoModule,
     InventarioModule,

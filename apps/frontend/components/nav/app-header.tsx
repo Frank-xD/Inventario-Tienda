@@ -1,8 +1,10 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, PackagePlus, ShoppingCart, Store } from "lucide-react";
+import { BotonSalir } from "@/components/auth/puerta-acceso";
 import { Button } from "@/components/ui/button";
 
 export const SECCIONES = [
@@ -11,8 +13,19 @@ export const SECCIONES = [
   { href: "/panel", label: "Home", icon: LayoutDashboard },
 ] as const;
 
-/** Encabezado común: nombre de la tienda (vuelve al inicio) + accesos a las secciones. */
-export function AppHeader({ titulo, subtitulo }: { titulo: string; subtitulo?: string }) {
+/**
+ * Encabezado común: nombre de la tienda (vuelve al inicio) + accesos a las
+ * secciones. `acciones` se muestra a la derecha (p. ej. el interruptor de caja).
+ */
+export function AppHeader({
+  titulo,
+  subtitulo,
+  acciones,
+}: {
+  titulo: string;
+  subtitulo?: string;
+  acciones?: ReactNode;
+}) {
   const pathname = usePathname();
   return (
     <header className="flex flex-wrap items-center justify-between gap-4">
@@ -30,20 +43,24 @@ export function AppHeader({ titulo, subtitulo }: { titulo: string; subtitulo?: s
           {subtitulo && <p className="text-muted-foreground text-sm">{subtitulo}</p>}
         </div>
       </div>
-      <nav className="flex items-center gap-1" aria-label="Secciones">
-        {SECCIONES.map(({ href, label, icon: Icon }) => (
-          <Button
-            key={href}
-            variant={pathname === href ? "secondary" : "ghost"}
-            size="sm"
-            asChild
-          >
-            <Link href={href} aria-current={pathname === href ? "page" : undefined}>
-              <Icon /> {label}
-            </Link>
-          </Button>
-        ))}
-      </nav>
+      <div className="flex flex-wrap items-center gap-3">
+        <nav className="flex items-center gap-1" aria-label="Secciones">
+          {SECCIONES.map(({ href, label, icon: Icon }) => (
+            <Button
+              key={href}
+              variant={pathname === href ? "secondary" : "ghost"}
+              size="sm"
+              asChild
+            >
+              <Link href={href} aria-current={pathname === href ? "page" : undefined}>
+                <Icon /> {label}
+              </Link>
+            </Button>
+          ))}
+        </nav>
+        {acciones}
+        <BotonSalir />
+      </div>
     </header>
   );
 }

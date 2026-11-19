@@ -4,7 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { TipoMovimientoCaja } from '../common/tienda.js';
+import {
+  finDia,
+  inicioDia,
+  type TipoMovimientoCaja,
+} from '../common/tienda.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Eventos, RealtimeGateway } from '../realtime/realtime.gateway.js';
 
@@ -45,10 +49,29 @@ export class CajaService {
     return { ...caja, resumen };
   }
 
-  historial(limite = 30) {
+  listarMovimientos(f: { desde?: string; hasta?: string; limite: number }) {
+    return this.prisma.movimientoCaja.findMany({
+      where: {
+        creadoEn: {
+          ...(f.desde && { gte: inicioDia(f.desde) }),
+          ...(f.hasta && { lte: finDia(f.hasta) }),
+        },
+      },
+      orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],
+      take: f.limite,
+    });
+  }
+
+  historial(f: { desde?: string; hasta?: string; limite: number }) {
     return this.prisma.vResumenCaja.findMany({
+      where: {
+        abiertaEn: {
+          ...(f.desde && { gte: inicioDia(f.desde) }),
+          ...(f.hasta && { lte: finDia(f.hasta) }),
+        },
+      },
       orderBy: { abiertaEn: 'desc' },
-      take: limite,
+      take: f.limite,
     });
   }
 

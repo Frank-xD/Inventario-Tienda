@@ -1,18 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Banknote, CheckCircle2, Minus, Plus, Scale, Search, ShoppingCart, Smartphone, Tag, Trash2 } from "lucide-react";
 import { bs, enviar, type MetodoPago } from "@/lib/api";
 import { errorCantidad, formatCantidad, importeVenta, pasoCantidad } from "@/lib/cantidad";
 import { nombreDe, type Producto } from "@/lib/modelos";
 import { cn } from "@/lib/utils";
-import { useCaja, useCategorias, useProductos, useProveedores } from "@/hooks/use-datos";
+import { useCaja, useCategorias, useProductos } from "@/hooks/use-datos";
 import { AppHeader } from "@/components/nav/app-header";
 import { CodigoInput } from "@/components/scanner/codigo-input";
 import { Campo, ErrorEnvio, EstadoCarga, useEnvio } from "@/components/admin/comun";
 import { ImagenProducto, TarjetaProducto } from "@/components/productos/tarjeta-producto";
-import { BarraCaja } from "./caja";
 import { Modal } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +28,6 @@ interface ItemVenta {
 export function Venta() {
   const router = useRouter();
   const productosQ = useProductos();
-  const proveedoresQ = useProveedores();
   const categoriasQ = useCategorias();
   const cajaQ = useCaja();
   // Solo se venden productos activos de categorías activas.
@@ -36,12 +35,10 @@ export function Venta() {
     const ocultas = new Set((categoriasQ.data ?? []).filter((c) => !c.activa).map((c) => c.id));
     return (productosQ.data ?? []).filter((p) => p.activo && !ocultas.has(p.categoriaId));
   }, [productosQ.data, categoriasQ.data]);
-  const proveedores = (proveedoresQ.data ?? []).filter((p) => p.activo);
   const categorias = (categoriasQ.data ?? []).filter((c) => c.activa);
   const caja = cajaQ.data?.caja ?? null;
-  const errorCarga = productosQ.error ?? cajaQ.error ?? proveedoresQ.error ?? categoriasQ.error;
+  const errorCarga = productosQ.error ?? cajaQ.error ?? categoriasQ.error;
   const { enviando, error: errorEnvio, setError: setErrorEnvio, ejecutar } = useEnvio();
-  const [proveedorId, setProveedorId] = useState("");
   const [categoriaId, setCategoriaId] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [items, setItems] = useState<ItemVenta[]>([]);
@@ -56,11 +53,10 @@ export function Venta() {
     const q = busqueda.trim().toLowerCase();
     return productos.filter(
       (p) =>
-        (!proveedorId || p.proveedorId === Number(proveedorId)) &&
         (!categoriaId || p.categoriaId === Number(categoriaId)) &&
         (!q || p.nombre.toLowerCase().includes(q)),
     );
-  }, [productos, proveedorId, categoriaId, busqueda]);
+  }, [productos, categoriaId, busqueda]);
 
   // Producto por kg cuyo peso se está ingresando.
   const [pesando, setPesando] = useState<Producto | null>(null);
@@ -148,7 +144,6 @@ export function Venta() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-8">
       <AppHeader titulo="Venta" subtitulo="Escanea o elige los productos que se llevan" />
       <EstadoCarga cargando={productosQ.cargando} error={errorCarga} />
-      <BarraCaja caja={caja} cargando={cajaQ.cargando} />
 
       {aviso && (
         <Card className="flex-row items-center gap-3 border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
@@ -161,19 +156,18 @@ export function Venta() {
         {/* Columna izquierda: filtros y productos */}
         <Card>
           <CardContent className="flex flex-col gap-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Select
-                aria-label="Proveedor"
-                value={proveedorId}
-                onChange={(e) => setProveedorId(e.target.value)}
-              >
-                <option value="">Todos los proveedores</option>
-                {proveedores.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
-                  </option>
-                ))}
-              </Select>
+            <div className="relative">
+              <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+              <Input
+                className="pl-9"
+                placeholder="Buscar por nombre…"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                aria-label="Buscar producto por nombre"
+              />
+            </div>
+
+            <div className="grid items-start gap-3 sm:grid-cols-2">
               <Select
                 aria-label="Categoría"
                 value={categoriaId}
@@ -186,19 +180,7 @@ export function Venta() {
                   </option>
                 ))}
               </Select>
-            </div>
-
-            <CodigoInput onCodigo={onCodigo} />
-
-            <div className="relative">
-              <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-              <Input
-                className="pl-9"
-                placeholder="Buscar por nombre…"
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                aria-label="Buscar producto por nombre"
-              />
+              <CodigoInput onCodigo={onCodigo} />
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -408,7 +390,13 @@ export function Venta() {
 
             <ErrorEnvio>{errorEnvio}</ErrorEnvio>
             {!caja && !cajaQ.cargando && items.length > 0 && (
-              <p className="text-sm text-amber-600">Abre la caja para poder cobrar.</p>
+              <p className="text-sm text-amber-600">
+                La caja está cerrada. Ábrela en{" "}
+                <Link href="/panel" className="font-medium underline underline-offset-2">
+                  Home
+                </Link>{" "}
+                para poder cobrar.
+              </p>
             )}
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" size="lg" onClick={cancelar}>

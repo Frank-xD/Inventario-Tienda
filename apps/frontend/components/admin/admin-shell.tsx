@@ -23,6 +23,8 @@ import type { Aviso } from "@/lib/modelos";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AdminStoreProvider, HaceCuanto, useAdmin } from "./admin-store";
+import { BotonSalir } from "@/components/auth/puerta-acceso";
+import { CajaEncabezado } from "@/components/venta/caja";
 import { DetalleAviso, IconoAviso } from "./avisos";
 
 const NAV = [
@@ -101,6 +103,8 @@ function Layout({ children }: { children: React.ReactNode }) {
             {colapsado ? <PanelLeftOpen /> : <PanelLeftClose />}
           </Button>
           <Notificaciones />
+          <CajaEncabezado />
+          <BotonSalir />
         </header>
         <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-8">{children}</main>
       </div>

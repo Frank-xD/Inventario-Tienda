@@ -26,6 +26,7 @@ import {
   filtrosProductos,
 } from './productos.schemas.js';
 import { MAX_FOTO_BYTES, ProductosService } from './productos.service.js';
+import { Publico } from '../auth/auth.guard.js';
 
 /** Lo que deja multer (almacenamiento en memoria, el predeterminado). */
 interface ArchivoSubido {
@@ -69,6 +70,7 @@ export class ProductosController {
    * Bytes de la foto. La URL lleva ?v=<fecha>, así que cambia al
    * reemplazarla y se puede guardar en caché sin vencimiento.
    */
+  @Publico()
   @Get(':id/foto')
   @Header('Cache-Control', 'public, max-age=31536000, immutable')
   async foto(@Param('id', { schema: idParam }) id: number) {

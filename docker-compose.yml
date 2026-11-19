@@ -32,6 +32,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-tienda}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-tienda_db}
       PORT: 3001
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # Contraseña para entrar al sistema (cámbiala en .env).
+      APP_PASSWORD: ${APP_PASSWORD:-adm1234}
+      # En Docker sobre Windows los cambios del código montado no avisan al
+      # contenedor: `nest start --watch` (tsc) tiene que revisarlos por sondeo.
+      TSC_WATCHFILE: DynamicPriorityPolling
+      TSC_WATCHDIRECTORY: DynamicPriorityPolling
       OBSERVE_APP_KEY: ${OBSERVE_APP_KEY:-}
       OBSERVE_APP_SECRET: ${OBSERVE_APP_SECRET:-}
     ports:

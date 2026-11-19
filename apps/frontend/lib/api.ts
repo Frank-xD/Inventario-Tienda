@@ -1,3 +1,5 @@
+import { cerrarSesion, tokenActual } from "./sesion";
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 /** Prisma serializa los NUMERIC como string. */
@@ -59,11 +61,22 @@ export interface ResumenCaja {
   diferencia: Decimal | null;
 }
 
+export interface MovimientoCajaApi {
+  id: number;
+  cajaId: number;
+  tipo: "ingreso" | "egreso";
+  monto: Decimal;
+  motivo: string;
+  creadoEn: string;
+}
+
 export interface CajaActual {
   id: number;
   abiertaEn: string;
   cerradaEn: string | null;
   resumen: ResumenCaja | null;
+  /** Ingresos y egresos extra, del más reciente al más antiguo. */
+  movimientos: MovimientoCajaApi[];
 }
 
 export interface ProveedorApi {
@@ -155,10 +168,17 @@ export interface Anuncio {
  */
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const esFormulario = init?.body instanceof FormData;
+  const token = typeof window === "undefined" ? null : tokenActual();
   const res = await fetch(`${API_URL}/api${path}`, {
     ...init,
-    headers: esFormulario ? init?.headers : { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      ...(esFormulario ? {} : { "Content-Type": "application/json" }),
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...init?.headers,
+    },
   });
+  // Sesión vencida o inválida: vuelve a pedir la contraseña.
+  if (res.status === 401 && path !== "/auth/login") cerrarSesion();
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
     const msg = Array.isArray(body?.message) ? body.message.join(", ") : body?.message;
