@@ -92,6 +92,18 @@ function Layout({ children }: { children: React.ReactNode }) {
           >
             <Menu />
           </Button>
+          {/* Celular: logo para volver rápido al inicio (en escritorio está en la barra lateral). */}
+          <Link
+            href="/"
+            title="Volver al inicio"
+            aria-label="Volver al inicio"
+            className="focus-visible:ring-ring/50 flex min-w-0 items-center gap-2 rounded-md p-1 outline-none focus-visible:ring-[3px] lg:hidden"
+          >
+            <span className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
+              <Store className="size-4" />
+            </span>
+            <span className="hidden truncate font-semibold tracking-tight min-[400px]:inline">Mi Tiendita</span>
+          </Link>
           <Button
             variant="ghost"
             size="icon"

@@ -75,11 +75,12 @@ export function TarjetaProducto({
       onClick={onClick}
       className="bg-card hover:bg-accent focus-visible:ring-ring/50 relative flex flex-col gap-2 rounded-lg border p-2 text-left transition-colors outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
     >
-      <ImagenProducto producto={p} className="h-24 w-full" />
+      {/* En celular la imagen es más baja para ver más productos por pantalla. */}
+      <ImagenProducto producto={p} className="h-16 w-full sm:h-24" />
       {enLista > 0 && (
         <Badge className="absolute top-3 right-3 tabular-nums shadow-sm">{formatCantidad(enLista, p.unidadMedida)}</Badge>
       )}
-      <div className="flex flex-1 flex-col gap-1 px-1">
+      <div className="flex flex-1 flex-col gap-0.5 px-1 sm:gap-1">
         <span className="line-clamp-2 text-sm leading-tight font-medium">{p.nombre}</span>
         <span className="text-muted-foreground flex items-center gap-1 text-xs">
           {p.unidadMedida === "kg" && <Scale className="size-3" aria-label="Se vende por peso" />}

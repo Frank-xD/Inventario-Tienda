@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, PackageOpen, Search, Trash2 } from "lucide-react";
 import { bs, enviar } from "@/lib/api";
@@ -15,6 +15,7 @@ import { CodigoInput } from "@/components/scanner/codigo-input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PanelLista } from "@/components/ui/panel-lista";
 import { Select } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 
@@ -56,6 +57,9 @@ export function Compra() {
   const [busqueda, setBusqueda] = useState("");
   const [verTodos, setVerTodos] = useState(false);
   const [items, setItems] = useState<ItemCompra[]>([]);
+  // Celular: la lista de la compra se abre como hoja inferior.
+  const [verLista, setVerLista] = useState(false);
+  const cerrarLista = useCallback(() => setVerLista(false), [setVerLista]);
 
   // ?proveedor=ID (desde el aviso "Hacer pedido") deja elegido ese proveedor una vez.
   const proveedorUrl = useParametroUrl("proveedor");
@@ -126,6 +130,7 @@ export function Compra() {
     setCategoriaId("");
     setBusqueda("");
     setVerTodos(false);
+    setVerLista(false);
   };
 
   const cancelar = () => {
@@ -158,14 +163,15 @@ export function Compra() {
     });
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-8">
+    // pb-28: en celular deja espacio para la barra fija de abajo.
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 pb-28 sm:gap-6 sm:p-8 sm:pb-28 lg:pb-8">
       <AppHeader titulo="Compra" subtitulo="Escanea o elige los productos que llegaron del proveedor" />
       <EstadoCarga cargando={productosQ.cargando} error={errorCarga} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {/* Columna izquierda: filtros y productos */}
-        <Card>
-          <CardContent className="flex flex-col gap-4">
+        <Card className="py-3 sm:py-6">
+          <CardContent className="flex flex-col gap-3 px-3 sm:gap-4 sm:px-6">
             <div className="grid gap-3 sm:grid-cols-2">
               <Select
                 aria-label="Proveedor de la compra"
@@ -216,7 +222,7 @@ export function Compra() {
               </label>
             )}
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
               {visibles.map((p) => (
                 <TarjetaProducto
                   key={p.id}
@@ -236,8 +242,26 @@ export function Compra() {
           </CardContent>
         </Card>
 
-        {/* Columna derecha: lista de la compra */}
-        <Card className="lg:sticky lg:top-6 lg:self-start">
+        {/* Columna derecha (escritorio) u hoja inferior (celular): lista de la compra */}
+        <PanelLista
+          abierto={verLista}
+          onAbrir={() => setVerLista(true)}
+          onCerrar={cerrarLista}
+          etiqueta="Lista de la compra"
+          resumen={items.length ? `${items.length} línea(s)` : "Toca un producto para agregarlo"}
+          total={bs.format(total)}
+          textoBoton="Ver compra"
+          vacio={items.length === 0}
+          aviso={
+            items.length === 0
+              ? null
+              : !proveedor
+                ? "Falta elegir el proveedor"
+                : hayErrores
+                  ? "Revisa cantidades y costos"
+                  : null
+          }
+        >
           <CardHeader>
             <CardTitle>Lista de productos</CardTitle>
             <CardDescription>
@@ -269,20 +293,21 @@ export function Compra() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-7"
+                          className="size-9 lg:size-7"
                           aria-label={`Quitar ${p.nombre}`}
                           onClick={() => setItems((prev) => prev.filter((x) => x.uid !== i.uid))}
                         >
                           <Trash2 />
                         </Button>
                       </div>
-                      <div className="grid grid-cols-[1fr_1fr_1.3fr_auto] items-end gap-2">
+                      {/* Celular: Cantidad y Costo arriba; Vence y "otro lote" abajo. */}
+                      <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[1fr_1fr_1.3fr_auto]">
                         <label className="flex flex-col gap-1">
                           <span className="text-muted-foreground text-xs">{kg ? "Cantidad (kg)" : "Cantidad"}</span>
                           <Input
                             type="number"
                             {...pasoCantidad(p.unidadMedida)}
-                            className="h-8 tabular-nums"
+                            className="h-9 tabular-nums lg:h-8"
                             value={i.cantidad}
                             aria-invalid={!!errores[n] && errores[n] !== "Falta el costo"}
                             onChange={(e) => editar(i.uid, { cantidad: e.target.value })}
@@ -295,31 +320,33 @@ export function Compra() {
                             min={0}
                             step="0.01"
                             inputMode="decimal"
-                            className="h-8 tabular-nums"
+                            className="h-9 tabular-nums lg:h-8"
                             value={i.costo}
                             aria-invalid={errores[n] === "Falta el costo"}
                             onChange={(e) => editar(i.uid, { costo: e.target.value })}
                           />
                         </label>
-                        <label className="flex flex-col gap-1">
-                          <span className="text-muted-foreground text-xs">Vence</span>
-                          <Input
-                            type="date"
-                            className="h-8"
-                            value={i.vencimiento}
-                            onChange={(e) => editar(i.uid, { vencimiento: e.target.value })}
-                          />
-                        </label>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-8"
-                          title="Agregar otro lote con otra fecha de vencimiento"
-                          aria-label={`Otro lote de ${p.nombre}`}
-                          onClick={() => otroLote(i)}
-                        >
-                          <CalendarPlus />
-                        </Button>
+                        <div className="col-span-2 flex items-end gap-2">
+                          <label className="flex min-w-0 flex-1 flex-col gap-1">
+                            <span className="text-muted-foreground text-xs">Vence</span>
+                            <Input
+                              type="date"
+                              className="h-9 lg:h-8"
+                              value={i.vencimiento}
+                              onChange={(e) => editar(i.uid, { vencimiento: e.target.value })}
+                            />
+                          </label>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-9 lg:size-8"
+                            title="Agregar otro lote con otra fecha de vencimiento"
+                            aria-label={`Otro lote de ${p.nombre}`}
+                            onClick={() => otroLote(i)}
+                          >
+                            <CalendarPlus />
+                          </Button>
+                        </div>
                       </div>
                       {errores[n] && <p className="text-destructive text-xs">{errores[n]}</p>}
                     </li>
@@ -350,7 +377,7 @@ export function Compra() {
               </Button>
             </div>
           </div>
-        </Card>
+        </PanelLista>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Banknote, Minus, Plus, Scale, Search, ShoppingCart, Smartphone, Tag, Trash2 } from "lucide-react";
@@ -14,6 +14,7 @@ import { CodigoInput } from "@/components/scanner/codigo-input";
 import { Campo, EstadoCarga, useEnvio } from "@/components/admin/comun";
 import { ImagenProducto, TarjetaProducto } from "@/components/productos/tarjeta-producto";
 import { Modal } from "@/components/ui/dialog";
+import { PanelLista } from "@/components/ui/panel-lista";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +49,9 @@ export function Venta() {
   // Descuento manual sobre el total: en Bs o en %.
   const [descuento, setDescuento] = useState("");
   const [tipoDescuento, setTipoDescuento] = useState<"bs" | "pct">("bs");
+  // Celular: la lista de la venta se abre como hoja inferior.
+  const [verLista, setVerLista] = useState(false);
+  const cerrarLista = useCallback(() => setVerLista(false), [setVerLista]);
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -114,6 +118,7 @@ export function Venta() {
     setDescuento("");
     setTipoDescuento("bs");
     setMetodo("efectivo");
+    setVerLista(false);
   };
 
   const cancelar = () => {
@@ -144,14 +149,15 @@ export function Venta() {
     });
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-8">
+    // pb-28: en celular deja espacio para la barra fija de abajo.
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 pb-28 sm:gap-6 sm:p-8 sm:pb-28 lg:pb-8">
       <AppHeader titulo="Venta" subtitulo="Escanea o elige los productos que se llevan" />
       <EstadoCarga cargando={productosQ.cargando} error={errorCarga} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {/* Columna izquierda: filtros y productos */}
-        <Card>
-          <CardContent className="flex flex-col gap-4">
+        <Card className="py-3 sm:py-6">
+          <CardContent className="flex flex-col gap-3 px-3 sm:gap-4 sm:px-6">
             <div className="relative">
               <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
               <Input
@@ -179,7 +185,7 @@ export function Venta() {
               <CodigoInput onCodigo={onCodigo} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
               {visibles.map((p) => {
                 const cantidad = enCarrito(p);
                 // Por kg se puede volver a tocar para corregir el peso.
@@ -205,8 +211,18 @@ export function Venta() {
           </CardContent>
         </Card>
 
-        {/* Columna derecha: lista de la venta */}
-        <Card className="lg:sticky lg:top-6 lg:self-start">
+        {/* Columna derecha (escritorio) u hoja inferior (celular): lista de la venta */}
+        <PanelLista
+          abierto={verLista}
+          onAbrir={() => setVerLista(true)}
+          onCerrar={cerrarLista}
+          etiqueta="Lista de la venta"
+          resumen={items.length ? `${items.length} producto(s)` : "Toca un producto para agregarlo"}
+          total={bs.format(total)}
+          textoBoton="Cobrar"
+          vacio={items.length === 0}
+          aviso={!caja && !cajaQ.cargando && items.length > 0 ? "Caja cerrada: ábrela para cobrar" : null}
+        >
           <CardHeader>
             <CardTitle>Lista de productos</CardTitle>
             <CardDescription>
@@ -236,7 +252,7 @@ export function Venta() {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="size-7"
+                          className="size-9 lg:size-7"
                           aria-label={`Quitar ${p.nombre}`}
                           onClick={() => fijarCantidad(p, 0)}
                         >
@@ -245,7 +261,7 @@ export function Venta() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-7 min-w-20 tabular-nums"
+                          className="h-9 min-w-20 tabular-nums lg:h-7"
                           title="Cambiar el peso"
                           aria-label={`Cambiar el peso de ${p.nombre}`}
                           onClick={() => setPesando(p)}
@@ -258,7 +274,7 @@ export function Venta() {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="size-7"
+                          className="size-9 lg:size-7"
                           aria-label={`Quitar una unidad de ${p.nombre}`}
                           onClick={() => fijarCantidad(p, cantidad - 1)}
                         >
@@ -268,7 +284,7 @@ export function Venta() {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="size-7"
+                          className="size-9 lg:size-7"
                           aria-label={`Agregar una unidad de ${p.nombre}`}
                           disabled={cantidad >= p.stock}
                           onClick={() => fijarCantidad(p, cantidad + 1)}
@@ -412,7 +428,7 @@ export function Venta() {
               </Button>
             </div>
           </div>
-        </Card>
+        </PanelLista>
       </div>
 
       <Modal
