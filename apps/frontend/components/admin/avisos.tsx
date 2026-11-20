@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/dialog";
+import { Select } from "@/components/ui/select";
 import { HaceCuanto, useAdmin } from "./admin-store";
 import { EstadoCarga, SinResultados, Titulo } from "./comun";
 
@@ -40,19 +41,45 @@ export function Avisos() {
   const { avisos, noLeidos, cargando, error, marcarLeido, marcarTodosLeidos } = useAdmin();
   const [filtro, setFiltro] = useState<(typeof FILTROS)[number]["id"]>("todos");
   const visibles = avisos.filter((a) => filtro === "todos" || a.tipo === filtro);
+  const contar = (id: (typeof FILTROS)[number]["id"]) =>
+    id === "todos" ? avisos.length : avisos.filter((a) => a.tipo === id).length;
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex items-end justify-between gap-3 sm:flex-wrap sm:gap-4">
         <Titulo descripcion={noLeidos ? `${noLeidos} sin leer` : "Estás al día"}>Avisos</Titulo>
-        <Button variant="outline" size="sm" onClick={() => void marcarTodosLeidos()} disabled={!noLeidos}>
-          <CheckCheck /> Marcar todo como leído
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          aria-label="Marcar todo como leído"
+          onClick={() => void marcarTodosLeidos()}
+          disabled={!noLeidos}
+        >
+          <CheckCheck /> <span className="sm:hidden">Leer todo</span>
+          <span className="hidden sm:inline">Marcar todo como leído</span>
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filtrar avisos">
+      {/* Celular: un solo desplegable con el conteo de cada tipo. */}
+      <div className="sm:hidden">
+        <Select
+          aria-label="Filtrar avisos"
+          value={filtro}
+          onChange={(e) => setFiltro(e.target.value as (typeof FILTROS)[number]["id"])}
+        >
+          {FILTROS.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.label} ({contar(f.id)})
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      {/* Escritorio/tablet: botones a la vista. */}
+      <div className="hidden flex-wrap gap-2 sm:flex" role="tablist" aria-label="Filtrar avisos">
         {FILTROS.map((f) => {
-          const n = f.id === "todos" ? avisos.length : avisos.filter((a) => a.tipo === f.id).length;
+          const n = contar(f.id);
           return (
             <Button
               key={f.id}
@@ -73,7 +100,10 @@ export function Avisos() {
         {visibles.map((a) => (
           <Card
             key={a.id}
-            className={cn("flex-row items-center gap-4 px-4 py-4", (a.leido || a.resuelto) && "bg-muted/40 shadow-none")}
+            className={cn(
+              "flex-row items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4 sm:py-4",
+              (a.leido || a.resuelto) && "bg-muted/40 shadow-none",
+            )}
           >
             <IconoAviso tipo={a.tipo} />
             <div className={cn("min-w-0 flex-1", a.resuelto && "opacity-70")}>
@@ -91,9 +121,18 @@ export function Avisos() {
             ) : a.leido ? (
               <span className="text-muted-foreground text-xs">Leído</span>
             ) : (
-              <Button variant="ghost" size="sm" onClick={() => void marcarLeido(a.id)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
+                aria-label="Marcar leído"
+                title="Marcar leído"
+                onClick={() => void marcarLeido(a.id)}
+              >
                 <span className="bg-primary size-2 rounded-full" aria-hidden />
-                Marcar leído
+                {/* Celular: solo el ícono, para dejarle ancho al texto del aviso. */}
+                <Check className="sm:hidden" />
+                <span className="hidden sm:inline">Marcar leído</span>
               </Button>
             )}
           </Card>

@@ -72,9 +72,14 @@ export function Productos() {
     <>
       <Titulo descripcion={cargando ? "Cargando…" : `${activos} productos activos`}>Productos</Titulo>
 
+      {/* Celular: buscador y "+" arriba; filtros debajo en dos columnas. */}
       <div className="flex flex-wrap items-center gap-3">
         <Buscador value={q} onChange={setQ} placeholder="Buscar por nombre o código de barras" />
-        <div className="w-44">
+        <Button className="sm:order-last" aria-label="Nuevo producto" onClick={() => setEditando("nuevo")}>
+          <Plus /> <span className="hidden sm:inline">Nuevo producto</span>
+        </Button>
+        <div className="grid w-full grid-cols-2 gap-3 sm:contents">
+        <div className="min-w-0 sm:w-44">
           <Select aria-label="Categoría" value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
             <option value="">Categoría: Todas</option>
             {categorias.map((c) => (
@@ -84,7 +89,7 @@ export function Productos() {
             ))}
           </Select>
         </div>
-        <div className="w-48">
+        <div className="min-w-0 sm:w-48">
           <Select aria-label="Proveedor" value={proveedorId} onChange={(e) => setProveedorId(e.target.value)}>
             <option value="">Proveedor: Todos</option>
             {proveedores.map((p) => (
@@ -94,16 +99,14 @@ export function Productos() {
             ))}
           </Select>
         </div>
-        <div className="w-36">
+        <div className="col-span-2 min-w-0 sm:col-span-1 sm:w-36">
           <Select aria-label="Estado" value={estado} onChange={(e) => setEstado(e.target.value as FiltroEstado)}>
             <option value="activos">Activos</option>
             <option value="inactivos">Inactivos</option>
             <option value="todos">Todos</option>
           </Select>
         </div>
-        <Button onClick={() => setEditando("nuevo")}>
-          <Plus /> Nuevo producto
-        </Button>
+        </div>
       </div>
 
       <EstadoCarga cargando={cargando} error={error} />
@@ -112,6 +115,49 @@ export function Productos() {
           {visibles.length === 0 ? (
             <SinResultados>{cargando ? "…" : "No hay productos que coincidan."}</SinResultados>
           ) : (
+            <>
+            {/* Celular: lista; tocar un producto lo abre para editar. */}
+            <ul className="divide-y sm:hidden">
+              {visibles.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => setEditando(p)}
+                    aria-label={`Editar ${p.nombre}`}
+                    className={`flex w-full items-center gap-3 px-2 py-2.5 text-left ${p.activo ? "" : "text-muted-foreground"}`}
+                  >
+                    <Miniatura url={p.fotoUrl} />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">{p.nombre}</span>
+                        {!p.activo && <Badge variant="outline">Inactivo</Badge>}
+                      </span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {nombreDe(categorias, p.categoriaId)} · {nombreDe(proveedores, p.proveedorId)}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="text-sm font-medium tabular-nums">
+                        {bs.format(p.precio)}
+                        <span className="text-muted-foreground text-xs font-normal"> /{p.unidadMedida === "kg" ? "kg" : "u"}</span>
+                      </span>
+                      {p.stock <= 0 ? (
+                        <Badge variant="destructive">Agotado</Badge>
+                      ) : p.stock <= p.stockMinimo ? (
+                        <Badge variant="outline" className="tabular-nums text-amber-600">
+                          {formatCantidad(p.stock, p.unidadMedida)} · bajo
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-xs tabular-nums">
+                          {formatCantidad(p.stock, p.unidadMedida)} en stock
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden sm:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -161,6 +207,8 @@ export function Productos() {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            </>
           )}
         </CardContent>
       </Card>

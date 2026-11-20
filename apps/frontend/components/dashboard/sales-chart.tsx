@@ -21,7 +21,8 @@ const diaLargo = new Intl.DateTimeFormat("es-BO", {
 
 export function SalesChart({ data }: { data: VentaDiaria[] }) {
   return (
-    <div className="h-64 w-full">
+    // Más bajo en celular para no ocupar toda la pantalla.
+    <div className="h-44 w-full sm:h-64">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid vertical={false} stroke="var(--border)" />
@@ -37,7 +38,10 @@ export function SalesChart({ data }: { data: VentaDiaria[] }) {
             width={56}
             tickLine={false}
             axisLine={false}
-            tickFormatter={(v: number) => `Bs ${v}`}
+            // Miles abreviados ("Bs 1,2k") para que el eje no le quite ancho a las barras.
+            tickFormatter={(v: number) =>
+              v >= 1000 ? `Bs ${(v / 1000).toLocaleString("es-BO", { maximumFractionDigits: 1 })}k` : `Bs ${v}`
+            }
             tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
           />
           <Tooltip

@@ -96,7 +96,7 @@ export function Estadisticas() {
       <Titulo descripcion={`Resumen de los últimos ${DIAS} días`}>Estadísticas generales</Titulo>
       <EstadoCarga cargando={false} error={error} />
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4 [&>*]:min-w-0">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 [&>*]:min-w-0">
         <Stat
           icon={Wallet}
           label={`Ventas (${DIAS} días)`}
@@ -145,7 +145,9 @@ export function Estadisticas() {
             <CardTitle>Ventas de los últimos {DIAS} días</CardTitle>
             <CardDescription>Total diario de ventas completadas</CardDescription>
           </CardHeader>
-          <CardContent>{diarias.data ? <SalesChart data={diarias.data} /> : <div className="h-64" />}</CardContent>
+          <CardContent className="px-3 sm:px-6">
+            {diarias.data ? <SalesChart data={diarias.data} /> : <div className="h-44 sm:h-64" />}
+          </CardContent>
         </Card>
 
         <Card>
@@ -204,6 +206,37 @@ export function Estadisticas() {
           {movimientos.data && movs.length === 0 ? (
             <SinResultados>No hay movimientos que coincidan.</SinResultados>
           ) : (
+            <>
+            {/* Celular: lista compacta, sin desplazamiento lateral. */}
+            <ul className="divide-y sm:hidden">
+              {movs.map((m) => {
+                const { label, icon: Icon } = TIPO_MOV[m.tipo];
+                const e = ESTADO_MOV[m.estado];
+                const anulada = m.estado === "anulada";
+                return (
+                  <li key={`${m.tipo}-${m.id}`} className="flex items-start gap-3 py-2.5">
+                    <span className="bg-muted mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full">
+                      <Icon className="text-muted-foreground size-4" aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{m.detalle}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {label} #{m.id} · <HaceCuanto iso={m.fecha} />
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span
+                        className={`text-sm font-medium tabular-nums ${anulada ? "text-muted-foreground line-through" : ""}`}
+                      >
+                        {bs.format(m.total)}
+                      </span>
+                      {anulada && <Badge variant={e.variant}>{e.label}</Badge>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="hidden sm:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -244,6 +277,8 @@ export function Estadisticas() {
                 })}
               </TableBody>
             </Table>
+            </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -265,18 +300,21 @@ function Stat({
   warn?: boolean;
 }) {
   return (
-    <Card className="gap-1 py-4">
-      <CardHeader className="px-4">
-        <CardDescription className="flex items-center justify-between gap-1.5">
-          {label}
-          <Icon className="size-4" aria-hidden />
+    // En celular: más compacta (número más chico y pista de máximo 2 líneas).
+    <Card className="gap-1 py-3 sm:py-4">
+      <CardHeader className="px-3 sm:px-4">
+        <CardDescription className="flex items-center justify-between gap-1.5 text-xs sm:text-sm">
+          <span className="truncate">{label}</span>
+          <Icon className="size-4 shrink-0" aria-hidden />
         </CardDescription>
       </CardHeader>
-      <CardContent className="px-4">
-        <div className="text-2xl font-semibold tabular-nums">{value}</div>
+      <CardContent className="px-3 sm:px-4">
+        <div className="truncate text-xl font-semibold tabular-nums sm:text-2xl">{value}</div>
         {hint && (
-          <p className={`mt-1 flex items-center gap-1 text-xs ${warn ? "text-destructive" : "text-muted-foreground"}`}>
-            {warn && <AlertTriangle className="size-3" aria-hidden />}
+          <p
+            className={`mt-1 line-clamp-2 text-[11px] leading-snug sm:text-xs ${warn ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {warn && <AlertTriangle className="mr-1 inline size-3 align-[-2px]" aria-hidden />}
             {hint}
           </p>
         )}

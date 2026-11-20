@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 export function Titulo({ children, descripcion }: { children: React.ReactNode; descripcion?: string }) {
   return (
@@ -19,13 +20,15 @@ export function Buscador({
   value,
   onChange,
   placeholder,
+  className,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
+  className?: string;
 }) {
   return (
-    <div className="relative min-w-56 flex-1">
+    <div className={cn("relative min-w-56 flex-1", className)}>
       <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
       <Input
         className="pl-9"

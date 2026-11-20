@@ -50,7 +50,11 @@ export function Categorias() {
 
       <div className="flex flex-wrap items-center gap-3">
         <Buscador value={q} onChange={setQ} placeholder="Buscar categoría por nombre" />
-        <div className="w-44">
+        {/* Celular: "+" junto al buscador y el filtro de estado debajo. */}
+        <Button className="sm:order-last" aria-label="Nueva categoría" onClick={() => setEditando("nuevo")}>
+          <Plus /> <span className="hidden sm:inline">Nueva categoría</span>
+        </Button>
+        <div className="w-full sm:w-44">
           <Select
             aria-label="Estado"
             value={estado}
@@ -61,9 +65,6 @@ export function Categorias() {
             <option value="inactivos">Ocultas</option>
           </Select>
         </div>
-        <Button onClick={() => setEditando("nuevo")}>
-          <Plus /> Nueva categoría
-        </Button>
       </div>
 
       <EstadoCarga cargando={cargando} error={error} />

@@ -51,7 +51,11 @@ export function Proveedores() {
 
       <div className="flex flex-wrap items-center gap-3">
         <Buscador value={q} onChange={setQ} placeholder="Buscar por nombre, teléfono o notas" />
-        <div className="w-44">
+        {/* Celular: "+" junto al buscador y el filtro de estado debajo. */}
+        <Button className="sm:order-last" aria-label="Nuevo proveedor" onClick={() => setEditando("nuevo")}>
+          <Plus /> <span className="hidden sm:inline">Nuevo proveedor</span>
+        </Button>
+        <div className="w-full sm:w-44">
           <Select
             aria-label="Estado"
             value={estado}
@@ -62,9 +66,6 @@ export function Proveedores() {
             <option value="inactivos">Inactivos</option>
           </Select>
         </div>
-        <Button onClick={() => setEditando("nuevo")}>
-          <Plus /> Nuevo proveedor
-        </Button>
       </div>
 
       <EstadoCarga cargando={cargando} error={error} />
@@ -73,6 +74,32 @@ export function Proveedores() {
           {visibles.length === 0 ? (
             <SinResultados>{cargando ? "…" : "No hay proveedores que coincidan."}</SinResultados>
           ) : (
+            <>
+            {/* Celular: lista; tocar un proveedor lo abre para editar. */}
+            <ul className="divide-y sm:hidden">
+              {visibles.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => setEditando(p)}
+                    aria-label={`Editar ${p.nombre}`}
+                    className="flex w-full items-center gap-3 px-2 py-2.5 text-left"
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-medium">{p.nombre}</span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {[p.telefono, p.notas].filter(Boolean).join(" · ") || "Sin teléfono ni notas"}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-1">
+                      <EstadoBadge activo={p.activo} />
+                      <span className="text-muted-foreground text-xs tabular-nums">{p.productos} productos</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden sm:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -112,6 +139,8 @@ export function Proveedores() {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            </>
           )}
         </CardContent>
       </Card>
