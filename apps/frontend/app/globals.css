@@ -96,3 +96,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Barra de tiempo restante de los avisos flotantes (components/ui/toast.tsx). */
+@keyframes toast-tiempo {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}

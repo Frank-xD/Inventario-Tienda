@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Banknote, CheckCircle2, Minus, Plus, Scale, Search, ShoppingCart, Smartphone, Tag, Trash2 } from "lucide-react";
+import { Banknote, Minus, Plus, Scale, Search, ShoppingCart, Smartphone, Tag, Trash2 } from "lucide-react";
 import { bs, enviar, type MetodoPago } from "@/lib/api";
 import { errorCantidad, formatCantidad, importeVenta, pasoCantidad } from "@/lib/cantidad";
 import { nombreDe, type Producto } from "@/lib/modelos";
@@ -11,9 +11,10 @@ import { cn } from "@/lib/utils";
 import { useCaja, useCategorias, useProductos } from "@/hooks/use-datos";
 import { AppHeader } from "@/components/nav/app-header";
 import { CodigoInput } from "@/components/scanner/codigo-input";
-import { Campo, ErrorEnvio, EstadoCarga, useEnvio } from "@/components/admin/comun";
+import { Campo, EstadoCarga, useEnvio } from "@/components/admin/comun";
 import { ImagenProducto, TarjetaProducto } from "@/components/productos/tarjeta-producto";
 import { Modal } from "@/components/ui/dialog";
+import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,7 +39,7 @@ export function Venta() {
   const categorias = (categoriasQ.data ?? []).filter((c) => c.activa);
   const caja = cajaQ.data?.caja ?? null;
   const errorCarga = productosQ.error ?? cajaQ.error ?? categoriasQ.error;
-  const { enviando, error: errorEnvio, setError: setErrorEnvio, ejecutar } = useEnvio();
+  const { enviando, ejecutar } = useEnvio();
   const [categoriaId, setCategoriaId] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [items, setItems] = useState<ItemVenta[]>([]);
@@ -47,7 +48,6 @@ export function Venta() {
   // Descuento manual sobre el total: en Bs o en %.
   const [descuento, setDescuento] = useState("");
   const [tipoDescuento, setTipoDescuento] = useState<"bs" | "pct">("bs");
-  const [aviso, setAviso] = useState<string | null>(null);
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -84,8 +84,6 @@ export function Venta() {
       return p.stock <= 0
         ? `${p.nombre} está agotado.`
         : `Solo hay ${formatCantidad(p.stock, p.unidadMedida)} de ${p.nombre}.`;
-    setAviso(null);
-    setErrorEnvio(null);
     setItems((prev) => {
       if (nueva <= 0) return prev.filter((i) => i.producto.id !== p.id);
       if (!prev.some((i) => i.producto.id === p.id)) return [...prev, { producto: p, cantidad: nueva }];
@@ -126,31 +124,29 @@ export function Venta() {
 
   const confirmar = () =>
     void ejecutar(async () => {
-      // El backend vuelve a validar stock, unidad (enteros) y que la caja esté abierta.
-      const venta = await enviar<{ id: number; total: string }>("POST", "/ventas", {
-        metodoPago: metodo,
-        descuento: montoDescuento,
-        items: items.map((i) => ({ productoId: i.producto.id, cantidad: i.cantidad })),
-      });
-      const vuelto = metodo === "efectivo" && recibido ? ` · cambio ${bs.format(cambio)}` : "";
-      const conDescuento = montoDescuento > 0 ? ` (descuento ${bs.format(montoDescuento)})` : "";
-      setAviso(
-        `Venta #${venta.id} registrada: ${bs.format(Number(venta.total))}${conDescuento} en ${metodo === "efectivo" ? "efectivo" : "transferencia/QR"}${vuelto}.`,
-      );
-      limpiar();
+      try {
+        // El backend vuelve a validar stock, unidad (enteros) y que la caja esté abierta.
+        const venta = await enviar<{ id: number; total: string }>("POST", "/ventas", {
+          metodoPago: metodo,
+          descuento: montoDescuento,
+          items: items.map((i) => ({ productoId: i.producto.id, cantidad: i.cantidad })),
+        });
+        const vuelto = metodo === "efectivo" && recibido ? ` · cambio ${bs.format(cambio)}` : "";
+        const conDescuento = montoDescuento > 0 ? ` (descuento ${bs.format(montoDescuento)})` : "";
+        toast.exito(
+          `Venta #${venta.id} registrada: ${bs.format(Number(venta.total))}${conDescuento} en ${metodo === "efectivo" ? "efectivo" : "transferencia/QR"}${vuelto}.`,
+        );
+        limpiar();
+      } catch (e) {
+        // Aviso flotante: no empuja los botones de la lista.
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
     });
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-8">
       <AppHeader titulo="Venta" subtitulo="Escanea o elige los productos que se llevan" />
       <EstadoCarga cargando={productosQ.cargando} error={errorCarga} />
-
-      {aviso && (
-        <Card className="flex-row items-center gap-3 border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
-          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden />
-          <p className="text-sm">{aviso}</p>
-        </Card>
-      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {/* Columna izquierda: filtros y productos */}
@@ -388,7 +384,6 @@ export function Venta() {
               </div>
             )}
 
-            <ErrorEnvio>{errorEnvio}</ErrorEnvio>
             {!caja && !cajaQ.cargando && items.length > 0 && (
               <p className="text-sm text-amber-600">
                 La caja está cerrada. Ábrela en{" "}

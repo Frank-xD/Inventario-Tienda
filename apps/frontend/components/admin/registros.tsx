@@ -21,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/
 import { Modal } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
 import {
   Table,
   TableBody,
@@ -506,6 +507,7 @@ function FormAnular({ venta, onListo }: { venta: VentaApi; onListo: () => void }
         e.preventDefault();
         void ejecutar(async () => {
           await enviar("POST", `/ventas/${venta.id}/anular`, { motivo: motivo.trim() });
+          toast.exito(`Venta #${venta.id} anulada. El stock se devolvió.`);
           onListo();
         });
       }}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { enviar, type Configuracion as Config } from "@/lib/api";
 import { guardarSesion } from "@/lib/sesion";
 import { useTema } from "@/lib/tema";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "@/components/ui/toast";
 import { Campo, ErrorEnvio, EstadoCarga, Titulo, useEnvio } from "./comun";
 
 type IdNotif = "notifStock" | "notifVencimientos" | "notifProveedores" | "notifInfo";
@@ -46,15 +47,11 @@ function CambiarContrasena() {
   const [actual, setActual] = useState("");
   const [nueva, setNueva] = useState("");
   const [repetir, setRepetir] = useState("");
-  const [listo, setListo] = useState(false);
 
   const corta = nueva !== "" && nueva.length < 6;
   const distinta = repetir !== "" && repetir !== nueva;
   const valido = actual !== "" && nueva.length >= 6 && repetir === nueva;
-  const limpiarAvisos = () => {
-    setListo(false);
-    setError(null);
-  };
+  const limpiarAvisos = () => setError(null);
 
   return (
     <Card>
@@ -75,7 +72,7 @@ function CambiarContrasena() {
               setActual("");
               setNueva("");
               setRepetir("");
-              setListo(true);
+              toast.exito("Contraseña cambiada. Úsala la próxima vez que entres.");
             });
           }}
         >
@@ -120,7 +117,6 @@ function CambiarContrasena() {
             {distinta && <p className="text-destructive text-xs">No coincide con la nueva contraseña.</p>}
           </Campo>
           <ErrorEnvio>{error}</ErrorEnvio>
-          {listo && <p className="text-sm text-emerald-600">Contraseña cambiada. Úsala la próxima vez que entres.</p>}
           <Button type="submit" className="self-start" disabled={!valido || enviando}>
             {enviando ? "Guardando…" : "Cambiar contraseña"}
           </Button>
@@ -141,17 +137,14 @@ function FormConfiguracion({ inicial }: { inicial: Config }) {
     notifProveedores: inicial.notifProveedores,
     notifInfo: inicial.notifInfo,
   });
-  const [guardado, setGuardado] = useState(false);
-
   return (
     <form
       className="flex flex-col gap-6"
-      onChange={() => setGuardado(false)}
       onSubmit={(e) => {
         e.preventDefault();
         void ejecutar(async () => {
           await enviar("PATCH", "/configuracion", { nombreTienda: nombre, correo, telefono, ...notif });
-          setGuardado(true);
+          toast.exito("Cambios guardados.");
         });
       }}
     >
@@ -200,10 +193,7 @@ function FormConfiguracion({ inicial }: { inicial: Config }) {
                 </span>
                 <Switch
                   checked={notif[n.id]}
-                  onCheckedChange={(v: boolean) => {
-                    setNotif((prev) => ({ ...prev, [n.id]: v }));
-                    setGuardado(false);
-                  }}
+                  onCheckedChange={(v: boolean) => setNotif((prev) => ({ ...prev, [n.id]: v }))}
                 />
               </label>
             ))}
@@ -213,11 +203,6 @@ function FormConfiguracion({ inicial }: { inicial: Config }) {
 
       <div className="flex flex-wrap items-center justify-end gap-3">
         <ErrorEnvio>{error}</ErrorEnvio>
-        {guardado && (
-          <span className="flex items-center gap-1.5 text-sm text-emerald-600">
-            <CheckCircle2 className="size-4" /> Cambios guardados
-          </span>
-        )}
         <Button type="submit" size="lg" disabled={enviando || !nombre.trim()}>
           {enviando ? "Guardando…" : "Guardar cambios"}
         </Button>

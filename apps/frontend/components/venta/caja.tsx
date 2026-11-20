@@ -10,17 +10,17 @@ import { Modal } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 const hora = new Intl.DateTimeFormat("es-BO", { hour: "2-digit", minute: "2-digit", timeZone: "America/La_Paz" });
 
-type Vista = "resumen" | "abrir" | "cerrar" | "arqueo";
+type Vista = "resumen" | "abrir" | "cerrar";
 
 const TITULO: Record<Vista, string> = {
   resumen: "Caja",
   abrir: "Abrir caja",
   cerrar: "Cerrar caja",
-  arqueo: "Caja cerrada",
 };
 const DESCRIPCION: Partial<Record<Vista, string>> = {
   abrir: "¿Con cuánto efectivo empiezas el día (cambio)?",
@@ -38,7 +38,6 @@ export function CajaEncabezado() {
   const cargando = cajaQ.cargando;
   const [abierto, setAbierto] = useState(false);
   const [vista, setVista] = useState<Vista>("resumen");
-  const [arqueo, setArqueo] = useState<string | null>(null);
 
   const cerrarModal = () => {
     setAbierto(false);
@@ -81,21 +80,7 @@ export function CajaEncabezado() {
         {vista === "cerrar" && caja && (
           <div className="flex flex-col gap-3">
             <Volver onClick={() => setVista("resumen")} />
-            <FormCerrar
-              caja={caja}
-              onListo={(mensaje) => {
-                setArqueo(mensaje);
-                setVista("arqueo");
-              }}
-            />
-          </div>
-        )}
-        {vista === "arqueo" && (
-          <div className="flex flex-col gap-4">
-            <p className="text-sm">{arqueo}</p>
-            <Button size="lg" onClick={cerrarModal}>
-              Aceptar
-            </Button>
+            <FormCerrar caja={caja} onListo={cerrarModal} />
           </div>
         )}
       </Modal>
@@ -221,7 +206,6 @@ function FormMovimiento({ cajaId }: { cajaId: number }) {
   const [tipo, setTipo] = useState<"ingreso" | "egreso">("egreso");
   const [monto, setMonto] = useState("");
   const [motivo, setMotivo] = useState("");
-  const [listo, setListo] = useState<string | null>(null);
   const valido = Number(monto) > 0 && motivo.trim() !== "";
 
   return (
@@ -231,7 +215,7 @@ function FormMovimiento({ cajaId }: { cajaId: number }) {
         e.preventDefault();
         void ejecutar(async () => {
           await enviar("POST", `/cajas/${cajaId}/movimientos`, { tipo, monto: Number(monto), motivo: motivo.trim() });
-          setListo(`${tipo === "ingreso" ? "Ingreso" : "Egreso"} de ${bs.format(Number(monto))} registrado.`);
+          toast.exito(`${tipo === "ingreso" ? "Ingreso" : "Egreso"} de ${bs.format(Number(monto))} registrado.`);
           setMonto("");
           setMotivo("");
         });
@@ -246,10 +230,7 @@ function FormMovimiento({ cajaId }: { cajaId: number }) {
               type="button"
               role="radio"
               aria-checked={tipo === t}
-              onClick={() => {
-                setTipo(t);
-                setListo(null);
-              }}
+              onClick={() => setTipo(t)}
               className={cn(
                 "rounded px-2.5 py-0.5 text-xs font-medium",
                 tipo === t
@@ -274,10 +255,7 @@ function FormMovimiento({ cajaId }: { cajaId: number }) {
           required
           className="tabular-nums"
           value={monto}
-          onChange={(e) => {
-            setMonto(e.target.value);
-            setListo(null);
-          }}
+          onChange={(e) => setMonto(e.target.value)}
         />
       </Campo>
       <Campo label="Detalle" htmlFor="mov-motivo">
@@ -289,14 +267,10 @@ function FormMovimiento({ cajaId }: { cajaId: number }) {
             tipo === "egreso" ? "Ej.: pago de luz, compra de bolsas, adelanto a…" : "Ej.: cambio que se agregó al cajón…"
           }
           value={motivo}
-          onChange={(e) => {
-            setMotivo(e.target.value);
-            setListo(null);
-          }}
+          onChange={(e) => setMotivo(e.target.value)}
         />
       </Campo>
       <ErrorEnvio>{error}</ErrorEnvio>
-      {listo && <p className="text-sm text-emerald-600">{listo}</p>}
       <Button type="submit" variant={tipo === "egreso" ? "destructive" : "default"} disabled={enviando || !valido}>
         {enviando ? "Registrando…" : tipo === "egreso" ? "Registrar egreso" : "Registrar ingreso"}
       </Button>
@@ -314,6 +288,7 @@ function FormAbrir({ onListo }: { onListo: () => void }) {
         e.preventDefault();
         void ejecutar(async () => {
           await enviar("POST", "/cajas/abrir", { montoInicial: Number(monto) || 0 });
+          toast.exito(`Caja abierta con ${bs.format(Number(monto) || 0)}.`);
           onListo();
         });
       }}
@@ -339,7 +314,7 @@ function FormAbrir({ onListo }: { onListo: () => void }) {
   );
 }
 
-function FormCerrar({ caja, onListo }: { caja: CajaActual; onListo: (mensaje: string) => void }) {
+function FormCerrar({ caja, onListo }: { caja: CajaActual; onListo: () => void }) {
   const { enviando, error, ejecutar } = useEnvio();
   const [contado, setContado] = useState("");
   const esperado = Number(caja.resumen?.efectivoEsperado ?? 0);
@@ -352,11 +327,14 @@ function FormCerrar({ caja, onListo }: { caja: CajaActual; onListo: (mensaje: st
         e.preventDefault();
         void ejecutar(async () => {
           await enviar("POST", `/cajas/${caja.id}/cerrar`, { montoContado: Number(contado) });
-          onListo(
-            diferencia === 0 || diferencia === null
-              ? "El arqueo cuadró."
-              : `Arqueo con diferencia de ${bs.format(diferencia)} (${diferencia > 0 ? "sobrante" : "faltante"}).`,
-          );
+          if (diferencia === 0 || diferencia === null) toast.exito("Caja cerrada. El arqueo cuadró.");
+          else
+            // Con diferencia dura más, para que se alcance a leer.
+            toast.info(
+              `Caja cerrada. Arqueo con diferencia de ${bs.format(diferencia)} (${diferencia > 0 ? "sobrante" : "faltante"}).`,
+              9000,
+            );
+          onListo();
         });
       }}
     >

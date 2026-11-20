@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarPlus, CheckCircle2, PackageOpen, Search, Trash2 } from "lucide-react";
+import { CalendarPlus, PackageOpen, Search, Trash2 } from "lucide-react";
 import { bs, enviar } from "@/lib/api";
 import { errorCantidad, importe, pasoCantidad, sumarCantidad } from "@/lib/cantidad";
 import { nombreDe, type Producto } from "@/lib/modelos";
 import { useCategorias, useProductos, useProveedores } from "@/hooks/use-datos";
 import { useParametroUrl } from "@/hooks/use-parametro-url";
-import { ErrorEnvio, EstadoCarga, useEnvio } from "@/components/admin/comun";
+import { EstadoCarga, useEnvio } from "@/components/admin/comun";
 import { AppHeader } from "@/components/nav/app-header";
 import { ImagenProducto, TarjetaProducto } from "@/components/productos/tarjeta-producto";
 import { CodigoInput } from "@/components/scanner/codigo-input";
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { toast } from "@/components/ui/toast";
 
 /** Una línea de la compra. Los campos son texto mientras se editan. */
 interface ItemCompra {
@@ -47,7 +48,7 @@ export function Compra() {
   const proveedores = (proveedoresQ.data ?? []).filter((p) => p.activo);
   const categorias = (categoriasQ.data ?? []).filter((c) => c.activa);
   const errorCarga = productosQ.error ?? proveedoresQ.error ?? categoriasQ.error;
-  const { enviando, error: errorEnvio, setError: setErrorEnvio, ejecutar } = useEnvio();
+  const { enviando, ejecutar } = useEnvio();
 
   // El proveedor elegido es el de la compra y además filtra los productos.
   const [proveedorId, setProveedorId] = useState("");
@@ -55,7 +56,6 @@ export function Compra() {
   const [busqueda, setBusqueda] = useState("");
   const [verTodos, setVerTodos] = useState(false);
   const [items, setItems] = useState<ItemCompra[]>([]);
-  const [aviso, setAviso] = useState<string | null>(null);
 
   // ?proveedor=ID (desde el aviso "Hacer pedido") deja elegido ese proveedor una vez.
   const proveedorUrl = useParametroUrl("proveedor");
@@ -87,8 +87,6 @@ export function Compra() {
 
   /** Suma 1 (pieza o kg) a la primera línea del producto, o crea una línea nueva. */
   const agregar = (p: Producto): string | null => {
-    setAviso(null);
-    setErrorEnvio(null);
     // Sin proveedor elegido, se toma el del primer producto.
     if (!proveedor && p.proveedorId) setProveedorId(String(p.proveedorId));
     setItems((prev) => {
@@ -138,33 +136,31 @@ export function Compra() {
 
   const confirmar = () =>
     void ejecutar(async () => {
-      if (!proveedor) throw new Error("Elige el proveedor de la compra.");
-      const compra = await enviar<{ id: number; total: string }>("POST", "/compras", {
-        proveedorId: proveedor,
-        detalles: items.map((i) => ({
-          productoId: i.producto.id,
-          cantidad: Number(i.cantidad),
-          costoUnit: Number(i.costo),
-          ...(i.vencimiento && { fechaVencimiento: i.vencimiento }),
-        })),
-      });
-      setAviso(
-        `Compra #${compra.id} a ${nombreDe(proveedores, proveedor)} registrada: ${items.length} línea(s) por ${bs.format(Number(compra.total))}. El stock ya está actualizado.`,
-      );
-      limpiar();
+      try {
+        if (!proveedor) throw new Error("Elige el proveedor de la compra.");
+        const compra = await enviar<{ id: number; total: string }>("POST", "/compras", {
+          proveedorId: proveedor,
+          detalles: items.map((i) => ({
+            productoId: i.producto.id,
+            cantidad: Number(i.cantidad),
+            costoUnit: Number(i.costo),
+            ...(i.vencimiento && { fechaVencimiento: i.vencimiento }),
+          })),
+        });
+        toast.exito(
+          `Compra #${compra.id} a ${nombreDe(proveedores, proveedor)} registrada: ${items.length} línea(s) por ${bs.format(Number(compra.total))}. El stock ya está actualizado.`,
+        );
+        limpiar();
+      } catch (e) {
+        // Aviso flotante: no empuja los botones de la lista.
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
     });
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-8">
       <AppHeader titulo="Compra" subtitulo="Escanea o elige los productos que llegaron del proveedor" />
       <EstadoCarga cargando={productosQ.cargando} error={errorCarga} />
-
-      {aviso && (
-        <Card className="flex-row items-center gap-3 border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
-          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden />
-          <p className="text-sm">{aviso}</p>
-        </Card>
-      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {/* Columna izquierda: filtros y productos */}
@@ -338,7 +334,6 @@ export function Compra() {
               <span className="text-muted-foreground text-sm">Total de la compra</span>
               <span className="text-3xl font-semibold tabular-nums">{bs.format(total)}</span>
             </div>
-            <ErrorEnvio>{errorEnvio}</ErrorEnvio>
             {items.length > 0 && !proveedor && (
               <p className="text-sm text-amber-600">Elige el proveedor de la compra.</p>
             )}
