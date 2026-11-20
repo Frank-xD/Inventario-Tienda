@@ -418,8 +418,19 @@ function FormProducto({
           />
           {errorMinimo && <p className="text-destructive text-xs">{errorMinimo}</p>}
         </Campo>
+        {/* Escritorio: el botón va al pie de la columna derecha. */}
+        <div className="mt-auto hidden flex-col gap-4 md:flex">
+          <ErrorEnvio>{error}</ErrorEnvio>
+          <Button type="submit" size="lg" disabled={!valido || enviando}>
+            {enviando ? "Guardando…" : "Guardar producto"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Celular: barra fija al pie del modal, siempre a la vista mientras se llenan los campos. */}
+      <div className="bg-background sticky bottom-0 z-10 -mx-6 -mb-6 flex flex-col gap-2 border-t px-6 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden">
         <ErrorEnvio>{error}</ErrorEnvio>
-        <Button type="submit" size="lg" className="mt-auto" disabled={!valido || enviando}>
+        <Button type="submit" size="lg" className="w-full" disabled={!valido || enviando}>
           {enviando ? "Guardando…" : "Guardar producto"}
         </Button>
       </div>
@@ -466,10 +477,11 @@ function SelectorFoto({
   const url = cambio.tipo === "subir" ? vistaPrevia : cambio.tipo === "quitar" ? null : actual;
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="bg-muted/40 relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border">
+    // Celular: miniatura a la izquierda y botones a la derecha (no un cuadrado de todo el ancho).
+    <div className="flex items-start gap-3 md:flex-col md:items-stretch md:gap-2">
+      <div className="bg-muted/40 relative flex aspect-square size-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border md:size-auto md:w-full">
         {procesando ? (
-          <span className="text-muted-foreground flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground flex flex-col items-center gap-2 text-center text-xs md:flex-row md:text-sm">
             <Loader2 className="size-4 animate-spin" /> Comprimiendo…
           </span>
         ) : url ? (
@@ -480,7 +492,7 @@ function SelectorFoto({
               type="button"
               variant="secondary"
               size="icon"
-              className="absolute top-2 right-2"
+              className="absolute top-1.5 right-1.5 size-7 md:top-2 md:right-2 md:size-9"
               aria-label="Quitar foto"
               onClick={() => {
                 onCambio(actual ? { tipo: "quitar" } : { tipo: "mantener" });
@@ -491,12 +503,13 @@ function SelectorFoto({
             </Button>
           </>
         ) : (
-          <span className="text-muted-foreground flex flex-col items-center gap-2 text-sm">
-            <ImagePlus className="size-8" /> Sin foto
+          <span className="text-muted-foreground flex flex-col items-center gap-1 text-xs md:gap-2 md:text-sm">
+            <ImagePlus className="size-6 md:size-8" /> Sin foto
           </span>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <Button type="button" variant="outline" size="sm" asChild>
           <label className="cursor-pointer">
             <Upload /> Archivo
@@ -525,6 +538,7 @@ function SelectorFoto({
       </div>
       {info && <p className="text-muted-foreground text-xs tabular-nums">{info}</p>}
       {error && <p className="text-destructive text-xs">{error}</p>}
+      </div>
       <FotoCamara
         open={camara}
         onOpenChange={setCamara}
