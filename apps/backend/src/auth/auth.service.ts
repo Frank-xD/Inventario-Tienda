@@ -64,8 +64,13 @@ export class AuthService implements OnModuleInit {
     return process.env.APP_PASSWORD || 'adm1234';
   }
 
+  /**
+   * Clave de firma: AUTH_SECRET (si está definido) + la contraseña vigente.
+   * El secreto evita falsificar tokens aunque se filtre la tabla `acceso`, y
+   * la contraseña hace que cambiarla invalide todas las sesiones abiertas.
+   */
   private get clave() {
-    return process.env.AUTH_SECRET || `tienda:${this.hash ?? this.contrasenaInicial}`;
+    return `${process.env.AUTH_SECRET || 'tienda'}:${this.hash ?? this.contrasenaInicial}`;
   }
 
   private firmar(vence: number) {

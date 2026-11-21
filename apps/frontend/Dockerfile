@@ -25,6 +25,9 @@ FROM deps AS build
 # NEXT_PUBLIC_* se incrusta en el bundle durante el build.
 ARG NEXT_PUBLIC_API_URL=http://localhost:3001
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Vacío = standalone (imagen Docker). "export" = sitio estático en out/.
+ARG NEXT_OUTPUT=
+ENV NEXT_OUTPUT=$NEXT_OUTPUT
 COPY apps/frontend apps/frontend
 WORKDIR /app/apps/frontend
 RUN pnpm build

@@ -39,4 +39,5 @@ COPY --from=build /app/apps/backend/prisma /app/apps/backend/prisma
 COPY apps/backend/package.json apps/backend/prisma.config.ts /app/apps/backend/
 WORKDIR /app/apps/backend
 EXPOSE 3001
-CMD ["sh", "-c", "pnpm prisma migrate deploy && node dist/main.js"]
+# Sin pnpm al arrancar: verifica dependencias y ocupa ~300 MB (el plan gratis de Render tiene 512 MB).
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && exec node dist/main.js"]

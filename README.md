@@ -168,6 +168,10 @@ pnpm dlx shadcn@latest add dialog input select
 
 ## Producción
 
+**Despliegue gratuito en internet (Cloudflare Pages + Render + Supabase):** ver [`DEPLOY.md`](DEPLOY.md).
+
+En un servidor propio con Docker:
+
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 ```

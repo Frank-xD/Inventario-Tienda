@@ -1,0 +1,35 @@
+# Blueprint de Render: API (NestJS) en el plan gratuito. Ver DEPLOY.md.
+# Render lo lee al crear el servicio desde "New → Blueprint".
+services:
+  - type: web
+    name: tiendita-api
+    runtime: docker
+    plan: free
+    # Misma región que la base de datos de Supabase (East US, N. Virginia).
+    region: virginia
+    dockerContext: .
+    dockerfilePath: ./apps/backend/Dockerfile
+    # Ruta liviana (no consulta la BD): la usan Render y el "despertador" de cron-job.org.
+    healthCheckPath: /api
+    # Solo se reconstruye si cambia el backend o las dependencias.
+    buildFilter:
+      paths:
+        - apps/backend/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+    envVars:
+      # Cadena de conexión de Supabase (Session pooler) terminada en ?sslmode=require.
+      - key: DATABASE_URL
+        sync: false
+      # URL pública del frontend en Cloudflare Pages (https://….pages.dev).
+      - key: CORS_ORIGIN
+        sync: false
+      # Contraseña inicial para entrar al sistema (luego se cambia desde Configuración).
+      - key: APP_PASSWORD
+        sync: false
+      # Firma de las sesiones: Render genera un valor aleatorio.
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production
